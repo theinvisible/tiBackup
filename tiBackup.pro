@@ -15,4 +15,16 @@ CONFIG   -= app_bundle
 TEMPLATE = app
 
 
-SOURCES += main.cpp
+SOURCES += main.cpp \
+    lib/devicedisk.cpp \
+    diskobserver.cpp
+
+HEADERS += \
+    lib/devicedisk.h \
+    diskobserver.h
+
+unix:!macx:!symbian: LIBS += -ludev
+
+
+QMAKE_CXXFLAGS_DEBUG += -pipe
+QMAKE_CXXFLAGS_RELEASE += -pipe -O2 -march=native
