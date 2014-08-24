@@ -16,15 +16,19 @@ TEMPLATE = app
 
 
 SOURCES += main.cpp \
-    lib/devicedisk.cpp \
-    diskobserver.cpp
+    diskmain.cpp \
+    diskwatcher.cpp
 
 HEADERS += \
-    lib/devicedisk.h \
-    diskobserver.h
+    diskmain.h \
+    diskwatcher.h
 
-unix:!macx:!symbian: LIBS += -ludev
-
-
-QMAKE_CXXFLAGS_DEBUG += -pipe
-QMAKE_CXXFLAGS_RELEASE += -pipe -O2 -march=native
+unix {
+    message(Building for Unix)
+    INCLUDEPATH += /home/rene/DEV/qtcreator/tiBackupLib
+    LIBS += -L/home/rene/DEV/lib -ltiBackupLib
+    QMAKE_CXXFLAGS_DEBUG += -pipe
+    QMAKE_CXXFLAGS_RELEASE += -march=native \
+        -pipe \
+        -fomit-frame-pointer
+}

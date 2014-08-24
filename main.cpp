@@ -1,12 +1,12 @@
 #include <QCoreApplication>
 
-#include <diskobserver.h>
+#include <diskmain.h>
 
 int main(int argc, char *argv[])
 {
     QCoreApplication a(argc, argv);
 
-    DiskObserver *observer = new DiskObserver();
+    DiskMain *observer = new DiskMain();
 
     return a.exec();
 }
