@@ -14,6 +14,8 @@ public:
 signals:
 
 public slots:
+    void onDiskRemoved(DeviceDisk *disk);
+    void onDiskAdded(DeviceDisk *disk);
 
 private:
 

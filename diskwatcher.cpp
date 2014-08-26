@@ -19,10 +19,14 @@ void DiskWatcher::process()
 
 void DiskWatcher::onDiskRemoved(DeviceDisk *disk)
 {
-    qDebug() << "disk removed 111";
+    qDebug() << "disk removed 111 ->" << disk->name;
+
+    emit diskRemoved(disk);
 }
 
 void DiskWatcher::onDiskAdded(DeviceDisk *disk)
 {
-    qDebug() << "disk added 111";
+    qDebug() << "disk added 111 ->" << disk->name;
+
+    emit diskAdded(disk);
 }

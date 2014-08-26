@@ -5,6 +5,7 @@
 
 #include "tibackupdiskobserver.h"
 #include "diskwatcher.h"
+#include "ticonf.h"
 
 DiskMain::DiskMain(QObject *parent) : QObject(parent)
 {
@@ -34,5 +35,33 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
     connect(worker, SIGNAL(finished()), thread, SLOT(quit()));
     connect(worker, SIGNAL(finished()), worker, SLOT(deleteLater()));
     connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
+    connect(worker, SIGNAL(diskRemoved(DeviceDisk*)), this, SLOT(onDiskRemoved(DeviceDisk*)));
+    connect(worker, SIGNAL(diskAdded(DeviceDisk*)), this, SLOT(onDiskAdded(DeviceDisk*)));
     thread->start();
+}
+
+void DiskMain::onDiskRemoved(DeviceDisk *disk)
+{
+    qDebug() << "disk name22222222222222222222222222:" << disk->name;
+}
+
+void DiskMain::onDiskAdded(DeviceDisk *disk)
+{
+    qDebug() << "disk name3333333333333333333333333:" << disk->name;
+
+    disk->readPartitions();
+    qDebug() << "diskpartcount::" << disk->partitions.count();
+    for(int i=0; i < disk->partitions.count(); i++)
+    {
+        DeviceDiskPartition part = disk->partitions.at(i);
+        qDebug() << "disk partition added::" << part.uuid;
+
+        tiConfBackupJobs objjobs;
+        QList<tiBackupJob*> jobs = objjobs.getJobsByUuid(part.uuid);
+        for(int j=0; j < jobs.count(); j++)
+        {
+            tiBackupJob *job = jobs.at(j);
+            qDebug() << "job found for uuid::" << job->name;
+        }
+    }
 }
