@@ -49,6 +49,8 @@ void DiskMain::onDiskAdded(DeviceDisk *disk)
 {
     qDebug() << "disk name3333333333333333333333333:" << disk->name;
 
+    TiBackupLib backlib;
+
     disk->readPartitions();
     qDebug() << "diskpartcount::" << disk->partitions.count();
     for(int i=0; i < disk->partitions.count(); i++)
@@ -62,6 +64,16 @@ void DiskMain::onDiskAdded(DeviceDisk *disk)
         {
             tiBackupJob *job = jobs.at(j);
             qDebug() << "job found for uuid::" << job->name;
+
+            // Mount volume
+            backlib.mountPartition(&part);
+
+            // Do the backup stuff
+
+            // Umount volume
+            backlib.umountPartition(&part);
+
+            // Send message with status
         }
     }
 }
