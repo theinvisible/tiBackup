@@ -65,15 +65,10 @@ void DiskMain::onDiskAdded(DeviceDisk *disk)
             tiBackupJob *job = jobs.at(j);
             qDebug() << "job found for uuid::" << job->name;
 
-            // Mount volume
-            backlib.mountPartition(&part);
+            if(job->start_backup_on_hotplug == false)
+                continue;
 
-            // Do the backup stuff
-
-            // Umount volume
-            backlib.umountPartition(&part);
-
-            // Send message with status
+            job->startBackup(&part);
         }
     }
 }
