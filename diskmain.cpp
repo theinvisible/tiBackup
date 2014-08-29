@@ -1,4 +1,3 @@
-#include "diskmain.h"
 /*
  *
 tiBackup - A intelligent desktop/standalone backup system daemon
@@ -21,6 +20,8 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
     along with tiBackup.  If not, see <http://www.gnu.org/licenses/>.
 
 */
+
+#include "diskmain.h"
 
 #include <QDebug>
 #include <QThread>
