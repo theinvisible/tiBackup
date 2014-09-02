@@ -32,6 +32,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 DiskMain::DiskMain(QObject *parent) : QObject(parent)
 {
+
     TiBackupLib lib;
     DeviceDisk disk = lib.getAttachedDisks().at(0);
 
@@ -47,6 +48,7 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
         DeviceDiskPartition diskpart = disk.partitions.at(i);
         qDebug() << "part" << i << "=" << diskpart.name;
     }
+
 
     //tiBackupDiskObserver *obs = new tiBackupDiskObserver();
 
@@ -65,12 +67,12 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
 
 void DiskMain::onDiskRemoved(DeviceDisk *disk)
 {
-    qDebug() << "disk name22222222222222222222222222:" << disk->name;
+    qDebug() << "DiskMain::onDiskRemoved()" << disk->name;
 }
 
 void DiskMain::onDiskAdded(DeviceDisk *disk)
 {
-    qDebug() << "disk name3333333333333333333333333:" << disk->name;
+    qDebug() << "DiskMain::onDiskAdded()" << disk->name;
 
     TiBackupLib backlib;
 
