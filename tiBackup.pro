@@ -30,3 +30,6 @@ unix {
     QMAKE_CXXFLAGS_DEBUG += -pipe
     QMAKE_CXXFLAGS_RELEASE += -pipe -O2
 }
+
+OTHER_FILES += \
+    init.d/tibackup
