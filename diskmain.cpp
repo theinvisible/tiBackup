@@ -36,21 +36,18 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
     TiBackupLib lib;
     DeviceDisk disk = lib.getAttachedDisks().at(0);
 
-    qDebug() << "disk name1:" << disk.devname;
+    qDebug() << "DiskMain::DiskMain() -> disk name1:" << disk.devname;
 
     disk.readPartitions();
 
-    qDebug() << "disk name2:" << disk.devname;
-    qDebug() << "part found:" << disk.partitions.count();
+    qDebug() << "DiskMain::DiskMain() -> disk name2:" << disk.devname;
+    qDebug() << "DiskMain::DiskMain() -> part found:" << disk.partitions.count();
 
     for(int i=0; i < disk.partitions.count(); i++)
     {
         DeviceDiskPartition diskpart = disk.partitions.at(i);
-        qDebug() << "part" << i << "=" << diskpart.name;
+        qDebug() << "DiskMain::DiskMain() -> part" << i << "=" << diskpart.name;
     }
-
-
-    //tiBackupDiskObserver *obs = new tiBackupDiskObserver();
 
     QThread* thread = new QThread;
     DiskWatcher* worker = new DiskWatcher();
@@ -72,23 +69,23 @@ void DiskMain::onDiskRemoved(DeviceDisk *disk)
 
 void DiskMain::onDiskAdded(DeviceDisk *disk)
 {
-    qDebug() << "DiskMain::onDiskAdded()" << disk->name;
+    qDebug() << "DiskMain::onDiskAdded() -> " << disk->name;
 
     TiBackupLib backlib;
 
     disk->readPartitions();
-    qDebug() << "diskpartcount::" << disk->partitions.count();
+    qDebug() << "DiskMain::onDiskAdded() -> diskpartcount::" << disk->partitions.count();
     for(int i=0; i < disk->partitions.count(); i++)
     {
         DeviceDiskPartition part = disk->partitions.at(i);
-        qDebug() << "disk partition added::" << part.uuid;
+        qDebug() << "DiskMain::onDiskAdded() -> disk partition added::" << part.uuid;
 
         tiConfBackupJobs objjobs;
         QList<tiBackupJob*> jobs = objjobs.getJobsByUuid(part.uuid);
         for(int j=0; j < jobs.count(); j++)
         {
             tiBackupJob *job = jobs.at(j);
-            qDebug() << "job found for uuid::" << job->name;
+            qDebug() << "DiskMain::onDiskAdded() -> job found for uuid::" << job->name;
 
             if(job->start_backup_on_hotplug == false)
                 continue;

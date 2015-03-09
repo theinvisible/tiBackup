@@ -33,20 +33,23 @@ QFile *tibackupLog = 0;
 
 void logMessageOutput(QtMsgType type, const char *msg)
 {
+    tiConfMain main_settings;
+
     if(tibackupLog == 0)
     {
-
-        tiConfMain main_settings;
         tibackupLog = new QFile(QString("%1/tibackup.log").arg(main_settings.getValue("paths/logs").toString()));
         tibackupLog->open(QIODevice::Append | QIODevice::Text);
     }
+
+    bool tidebug = main_settings.getValue("main/debug").toBool();
 
     QTextStream out(tibackupLog);
     QDateTime currentDate = QDateTime::currentDateTime();
 
     switch (type) {
     case QtDebugMsg:
-        out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackup::Debug: " << msg << "\n";
+        if(tidebug == true)
+            out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackup::Debug: " << msg << "\n";
         break;
     case QtWarningMsg:
         out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackup::Warning: " << msg << "\n";
