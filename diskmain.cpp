@@ -125,11 +125,33 @@ void DiskMain::onTaskCheck()
         {
         case tiBackupJobIntervalDAILY:
         {
-            qDebug() << "curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job->intervalTime;
+            qDebug() << "daily::curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job->intervalTime;
             if(curDate.toString("hh:mm") == job->intervalTime)
             {
-
+                qDebug() << "we start task for backup id " << job->name;
+                job->startBackup();
             }
+            break;
+        }
+        case tiBackupJobIntervalWEEKLY:
+        {
+            qDebug() << "monthly::curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job->intervalTime;
+            if(curDate.toString("hh:mm") == job->intervalTime && (curDate.date().dayOfWeek()-1) == job->intervalDay)
+            {
+                qDebug() << "we start task for backup id " << job->name;
+                job->startBackup();
+            }
+            break;
+        }
+        case tiBackupJobIntervalMONTHLY:
+        {
+            qDebug() << "monthly::curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job->intervalTime;
+            if(curDate.toString("hh:mm") == job->intervalTime && curDate.date().day() == job->intervalDay)
+            {
+                qDebug() << "we start task for backup id " << job->name;
+                job->startBackup();
+            }
+            break;
         }
         }
     }
