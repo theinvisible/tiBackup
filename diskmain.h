@@ -39,6 +39,7 @@ signals:
 public slots:
     void onDiskRemoved(DeviceDisk *disk);
     void onDiskAdded(DeviceDisk *disk);
+    void onTaskCheck();
 
 private:
 

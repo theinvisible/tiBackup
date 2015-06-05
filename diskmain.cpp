@@ -25,6 +25,8 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 #include <QDebug>
 #include <QThread>
+#include <QDateTime>
+#include <QTimer>
 
 #include "tibackupdiskobserver.h"
 #include "diskwatcher.h"
@@ -60,6 +62,13 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
     connect(worker, SIGNAL(diskRemoved(DeviceDisk*)), this, SLOT(onDiskRemoved(DeviceDisk*)));
     connect(worker, SIGNAL(diskAdded(DeviceDisk*)), this, SLOT(onDiskAdded(DeviceDisk*)));
     thread->start();
+
+    // We start a timer for task observation
+    QTimer *timer = new QTimer(this);
+    connect(timer, SIGNAL(timeout()), this, SLOT(onTaskCheck()));
+    timer->start(1000*60);
+
+    onTaskCheck();
 }
 
 void DiskMain::onDiskRemoved(DeviceDisk *disk)
@@ -91,6 +100,37 @@ void DiskMain::onDiskAdded(DeviceDisk *disk)
                 continue;
 
             job->startBackup(&part);
+        }
+    }
+}
+
+void DiskMain::onTaskCheck()
+{
+    QDateTime curDate = QDateTime::currentDateTime();
+
+    qDebug() << "DiskMain::onTaskCheck()-> " << curDate.toString("MMM d hh:mm:ss");
+
+    // We check now all jobs if they have a task that meet the current condition
+    tiConfBackupJobs objjobs;
+    objjobs.readBackupJobs();
+    QList<tiBackupJob*> jobs = objjobs.getJobs();
+    for(int j=0; j < jobs.count(); j++)
+    {
+        tiBackupJob *job = jobs.at(j);
+
+        if(job->intervalType == tiBackupJobIntervalNONE)
+            continue;
+
+        switch(job->intervalType)
+        {
+        case tiBackupJobIntervalDAILY:
+        {
+            qDebug() << "curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job->intervalTime;
+            if(curDate.toString("hh:mm") == job->intervalTime)
+            {
+
+            }
+        }
         }
     }
 }
