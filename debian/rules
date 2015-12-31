@@ -1,0 +1,10 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_install:
+	mkdir -p debian/tibackup/usr/bin
+	mkdir -p debian/tibackup/etc/init.d
+	cp -a tiBackup debian/tibackup/usr/bin/.
+	cp -a init.d/tibackup debian/tibackup/etc/init.d/.

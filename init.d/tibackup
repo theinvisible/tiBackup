@@ -7,7 +7,7 @@ set -e
 NAME=tibackup
 PIDFILE=/var/run/$NAME.pid
 #This is the command to be run, give the full pathname
-DAEMON=/home/rene/DEV/bin/tiBackup
+DAEMON=/usr/bin/tiBackup
 DAEMON_OPTS=""
 
 export PATH="${PATH:+$PATH:}/usr/sbin:/sbin"
