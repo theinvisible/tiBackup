@@ -25,6 +25,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #define DISKOBSERVER_H
 
 #include <QObject>
+#include <QLocalServer>
 
 #include "tibackuplib.h"
 
@@ -40,8 +41,10 @@ public slots:
     void onDiskRemoved(DeviceDisk *disk);
     void onDiskAdded(DeviceDisk *disk);
     void onTaskCheck();
+    void onAPIConnected();
 
 private:
+    QLocalServer *apiServer;
 
 };
 

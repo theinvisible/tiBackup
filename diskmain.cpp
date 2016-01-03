@@ -27,10 +27,13 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QThread>
 #include <QDateTime>
 #include <QTimer>
+#include <QLocalSocket>
 
 #include "tibackupdiskobserver.h"
 #include "diskwatcher.h"
 #include "ticonf.h"
+#include "tibackupapi.h"
+#include "workers/tibackupjobworker.h"
 
 DiskMain::DiskMain(QObject *parent) : QObject(parent)
 {
@@ -67,6 +70,15 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
     QTimer *timer = new QTimer(this);
     connect(timer, SIGNAL(timeout()), this, SLOT(onTaskCheck()));
     timer->start(1000*60);
+
+    // Start API Server
+    QLocalServer::removeServer("tibackup");
+    apiServer = new QLocalServer(this);
+    connect(apiServer, SIGNAL(newConnection()), this, SLOT(onAPIConnected()));
+    if(!apiServer->listen("tibackup"))
+    {
+        qDebug() << "DiskMain::DiskMain() on apiServer->listen::" << apiServer->errorString();
+    }
 
     onTaskCheck();
 }
@@ -153,6 +165,43 @@ void DiskMain::onTaskCheck()
             }
             break;
         }
+        }
+    }
+}
+
+void DiskMain::onAPIConnected()
+{
+    qDebug() << "DiskMain::onAPIConnected()";
+
+    if(apiServer->hasPendingConnections())
+    {
+        QLocalSocket *client = apiServer->nextPendingConnection();
+        connect(client, SIGNAL(disconnected()), client, SLOT(deleteLater()));
+        client->waitForReadyRead();
+
+        QHash<QString, QString> apiData;
+        QDataStream in(client);
+        in.setVersion(QDataStream::Qt_4_0);
+        in >> apiData;
+
+        //QByteArray tmp = client->readAll();
+        qDebug() << "client api command::" << apiData;
+        client->flush();
+        client->disconnectFromServer();
+
+        if(apiData[tiBackupApi::API_VAR_CMD] == tiBackupApi::API_CMD_START)
+        {
+            QThread* thread = new QThread;
+            tiBackupJobWorker* worker = new tiBackupJobWorker();
+            worker->setJobName(apiData[tiBackupApi::API_VAR_BACKUPJOB]);
+            worker->moveToThread(thread);
+            //connect(worker, SIGNAL(error(QString)), this, SLOT(errorString(QString)));
+            connect(thread, SIGNAL(started()), worker, SLOT(process()));
+            //connect(worker, SIGNAL(finished()), this, SLOT(onManualBackupFinished()));
+            connect(worker, SIGNAL(finished()), thread, SLOT(quit()));
+            connect(worker, SIGNAL(finished()), worker, SLOT(deleteLater()));
+            connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
+            thread->start();
         }
     }
 }
