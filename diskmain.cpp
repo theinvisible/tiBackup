@@ -34,6 +34,9 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include "ticonf.h"
 #include "tibackupapi.h"
 #include "workers/tibackupjobworker.h"
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#include <QDataStream>
+#endif
 
 DiskMain::DiskMain(QObject *parent) : QObject(parent)
 {
