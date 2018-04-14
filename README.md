@@ -1,5 +1,7 @@
 This program tries to bring an important feature on the desktop and server for Linux: Backup
 
+![alt text](https://hadler.me/wordpress/wp-content/uploads/2014/08/tibackup1.png "tiBackupUi")
+
 For a more detailed information why this project was made look in my post
 
 The main features of the program are:
