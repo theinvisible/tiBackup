@@ -1,3 +1,3 @@
 #!/bin/bash
 
-sudo /home/rene/DEV/bin/tiBackup
+sudo /home/hare/DEV/bin/tiBackup
