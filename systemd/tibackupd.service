@@ -1,0 +1,10 @@
+[Unit]
+Description=tiBackup Server
+After=systemd-udevd.service
+Requires=systemd-udevd.service
+DefaultDependencies=no
+[Service]
+ExecStart=/usr/bin/tiBackup
+Restart=always
+[Install]
+WantedBy=multi-user.target
