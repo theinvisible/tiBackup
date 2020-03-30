@@ -1,0 +1,88 @@
+# Is performed before the scripts in the stages step
+before_script:  
+  - source /etc/profile
+
+# Defines stages which are to be executed
+stages:  
+  - build
+  
+# Stage "ubuntu"
+build-ubuntu-1804-64:  
+  stage: build
+  script:
+    - mkdir build
+    - cd tibackuplib-dev
+    - echo "y" | debuild -- clean
+    - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
+    - cd ..
+    - mv tibackuplib-dev_*.deb build/
+    - echo "y" | debuild -- clean
+    - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
+    - mv ../tibackuplib_*.deb build/
+    - upload_build build/tibackuplib*.deb || true
+
+  # The files which are to be made available in GitLab
+  artifacts:
+    paths:
+      - build/*
+
+  tags:
+    - build-ubuntu-1804-64
+
+# Stage "ubuntu"
+build-ubuntu-1604-64:  
+  stage: build
+  script:
+    - debuild clean
+    - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
+    - mkdir build
+    - mv ../tibackuplib_*.deb build/
+    - upload_build build/tibackuplib_*.deb || true
+
+  # The files which are to be made available in GitLab
+  artifacts:
+    paths:
+      - build/*
+
+  tags:
+    - build-ubuntu-1604-64
+
+# Stage "debian"
+build-debian-9-64:  
+  stage: build
+  script:
+    - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
+    - mkdir build
+    - mv ../tibackuplib_*.deb build/
+    - upload_build build/tibackuplib_*.deb || true
+
+  # The files which are to be made available in GitLab
+  artifacts:
+    paths:
+      - build/*
+
+  tags:
+    - build-debian-9-64
+
+# Stage "debian"
+build-debian-10-64:  
+  stage: build
+  script:
+    - mkdir build
+    - cd tibackuplib-dev
+    - echo "y" | debuild -- clean
+    - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
+    - cd ..
+    - mv tibackuplib-dev_*.deb build/
+    - echo "y" | debuild -- clean
+    - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
+    - mv ../tibackuplib_*.deb build/
+    - upload_build build/tibackuplib*.deb || true
+
+  # The files which are to be made available in GitLab
+  artifacts:
+    paths:
+      - build/*
+
+  tags:
+    - build-debian-10-64

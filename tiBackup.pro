@@ -25,11 +25,14 @@ HEADERS += \
 
 unix {
     message(Building for Unix)
-    INCLUDEPATH += /home/hare/DEV/qtcreator/tiBackupLib
-    LIBS += -L/home/hare/DEV/lib -ltiBackupLib
+    INCLUDEPATH += /usr/include/tibackuplib
+    LIBS += -ltiBackupLib
     QMAKE_CXXFLAGS_DEBUG += -pipe
     QMAKE_CXXFLAGS_RELEASE += -pipe -O2
 }
 
 OTHER_FILES += \
     init.d/tibackup
+
+DISTFILES += \
+    systemd/tibackupd.service
