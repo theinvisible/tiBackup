@@ -11,12 +11,12 @@ build-ubuntu-1804-64:
   stage: build
   script:
     - mkdir build
-    - sudo apt update && sudo apt install tibackuplib-dev
+    - sudo apt update && sudo apt install tibackuplib-dev -y
     - echo "y" | debuild -- clean
     - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
     - mv ../tibackup_*.deb build/
     - upload_build build/tibackup*.deb || true
-    - sudo apt purge tibackuplib-dev && sudo apt autoremove
+    - sudo apt purge tibackuplib-dev -y && sudo apt autoremove -y
 
   # The files which are to be made available in GitLab
   artifacts:
@@ -31,12 +31,12 @@ build-debian-10-64:
   stage: build
   script:
     - mkdir build
-    - sudo apt update && sudo apt install tibackuplib-dev
+    - sudo apt update && sudo apt install tibackuplib-dev -y
     - echo "y" | debuild -- clean
     - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
     - mv ../tibackup_*.deb build/
     - upload_build build/tibackup*.deb || true
-    - sudo apt purge tibackuplib-dev && sudo apt autoremove
+    - sudo apt purge tibackuplib-dev -y && sudo apt autoremove -y
 
   # The files which are to be made available in GitLab
   artifacts:
