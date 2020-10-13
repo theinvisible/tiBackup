@@ -122,7 +122,7 @@ build-ubuntu-2004-64:
     - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
     - mv ../tibackup_*.deb build/
     - upload_build_release build/tibackup*.deb || true
-    - sudo apt purge tibackuplib-dev -y && sudo apt autoremove -y
+    - sudo apt purge tibackuplib tibackuplib-dev -y && sudo apt autoremove -y
 
   # The files which are to be made available in GitLab
   artifacts:
@@ -145,7 +145,7 @@ build-ubuntu-1804-64:
     - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
     - mv ../tibackup_*.deb build/
     - upload_build_release build/tibackup*.deb || true
-    - sudo apt purge tibackuplib-dev -y && sudo apt autoremove -y
+    - sudo apt purge tibackuplib tibackuplib-dev -y && sudo apt autoremove -y
 
   # The files which are to be made available in GitLab
   artifacts:
@@ -168,7 +168,7 @@ build-debian-9-64:
     - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
     - mv ../tibackup_*.deb build/
     - upload_build_release build/tibackup*.deb || true
-    - sudo apt purge tibackuplib-dev -y && sudo apt autoremove -y
+    - sudo apt purge tibackuplib tibackuplib-dev -y && sudo apt autoremove -y
 
   # The files which are to be made available in GitLab
   artifacts:
@@ -191,7 +191,7 @@ build-debian-10-64:
     - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
     - mv ../tibackup_*.deb build/
     - upload_build_release build/tibackup*.deb || true
-    - sudo apt purge tibackuplib-dev -y && sudo apt autoremove -y
+    - sudo apt purge tibackuplib tibackuplib-dev -y && sudo apt autoremove -y
 
   # The files which are to be made available in GitLab
   artifacts:
