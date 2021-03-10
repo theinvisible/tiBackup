@@ -59,6 +59,9 @@ void logMessageOutput(QtMsgType type, const char *msg)
         if(tidebug == true)
             out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackupUi::Debug: " << str << "\n";
         break;
+    case QtInfoMsg:
+        out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackupUi::Info: " << str << "\n";
+        break;
     case QtWarningMsg:
         out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackupUi::Warning: " << str << "\n";
         break;
@@ -94,11 +97,9 @@ void logMessageOutput(QtMsgType type, const char *msg)
 
 int main(int argc, char *argv[])
 {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
     qInstallMessageHandler(logMessageOutput);
-#else
-    qInstallMsgHandler(logMessageOutput);
-#endif
+
+    qRegisterMetaType<DeviceDiskPartition>("DeviceDiskPartition");
 
     QCoreApplication a(argc, argv);
 

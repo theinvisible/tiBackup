@@ -1,8 +1,8 @@
-tibackup (0.6.0-4) precise; urgency=low
+tibackup (0.6.2-1) precise; urgency=low
 
-  * Add systemd service file
+  * For changelog see git commits
 
- -- Rene Hadler <rene@iksdeh.at>  Wed, 8 Jan 2020 10:06:00 +0100
+-- Rene Hadler <rene@iksdeh.at>  Tue, 10 Mar 2021 15:05:00 +0100
 
 tibackup (0.6.0-2) precise; urgency=low
 

@@ -25,8 +25,8 @@ HEADERS += \
 
 unix {
     message(Building for Unix)
-    INCLUDEPATH += /usr/include/tibackuplib
-    LIBS += -ltiBackupLib
+    INCLUDEPATH += /usr/include/tibackuplib ../tiBackupLib
+    LIBS += -L$$(HOME)/DEV/lib -ltiBackupLib
     QMAKE_CXXFLAGS_DEBUG += -pipe
     QMAKE_CXXFLAGS_RELEASE += -pipe -O2
 }
@@ -35,4 +35,7 @@ OTHER_FILES += \
     init.d/tibackup
 
 DISTFILES += \
+    .gitlab-ci.yml \
+    debian/changelog \
+    debian/control \
     systemd/tibackupd.service

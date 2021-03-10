@@ -29,6 +29,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QTimer>
 #include <QLocalSocket>
 
+#include "config.h"
 #include "tibackupdiskobserver.h"
 #include "diskwatcher.h"
 #include "ticonf.h"
@@ -75,10 +76,12 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
     timer->start(1000*60);
 
     // Start API Server
-    QLocalServer::removeServer("tibackup");
+    QLocalServer::removeServer(tibackup_config::api_sock_name);
     apiServer = new QLocalServer(this);
+    apiServer->setSocketOptions(QLocalServer::WorldAccessOption);
     connect(apiServer, SIGNAL(newConnection()), this, SLOT(onAPIConnected()));
-    if(!apiServer->listen("tibackup"))
+    qDebug() << "DiskMain::DiskMain() on apiServer->listen::starting server::" << tibackup_config::api_sock_name;
+    if(!apiServer->listen(tibackup_config::api_sock_name))
     {
         qDebug() << "DiskMain::DiskMain() on apiServer->listen::" << apiServer->errorString();
     }
@@ -168,6 +171,8 @@ void DiskMain::onTaskCheck()
             }
             break;
         }
+        case tiBackupJobIntervalNONE:
+            break;
         }
     }
 }
@@ -182,17 +187,16 @@ void DiskMain::onAPIConnected()
         connect(client, SIGNAL(disconnected()), client, SLOT(deleteLater()));
         client->waitForReadyRead();
 
-        QHash<QString, QString> apiData;
+        QHash<tiBackupApi::API_VAR, QString> apiData;
         QDataStream in(client);
-        in.setVersion(QDataStream::Qt_4_0);
+        in.setVersion(QDataStream::Qt_5_9);
         in >> apiData;
 
         //QByteArray tmp = client->readAll();
         qDebug() << "client api command::" << apiData;
         client->flush();
-        client->disconnectFromServer();
 
-        if(apiData[tiBackupApi::API_VAR_CMD] == tiBackupApi::API_CMD_START)
+        if(apiData[tiBackupApi::API_VAR::API_VAR_CMD] == tiBackupApi::API_CMD_START)
         {
             QThread* thread = new QThread;
             tiBackupJobWorker* worker = new tiBackupJobWorker();
@@ -206,5 +210,35 @@ void DiskMain::onAPIConnected()
             connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
             thread->start();
         }
+        else if(apiData[tiBackupApi::API_VAR_CMD] == tiBackupApi::API_CMD_DISK_GET_PARTITIONS)
+        {
+            DeviceDisk selDisk;
+            selDisk.devname = apiData[tiBackupApi::API_VAR_DEVNAME];
+            selDisk.readPartitions();
+
+            QByteArray block;
+            QDataStream out(&block, QIODevice::WriteOnly);
+            out.setVersion(QDataStream::Qt_5_9);
+            out << selDisk.partitions;
+
+            client->write(block);
+            client->flush();
+        }
+        else if(apiData[tiBackupApi::API_VAR_CMD] == tiBackupApi::API_CMD_DISK_GET_PARTITION_BY_UUID)
+        {
+            DeviceDisk selDisk;
+            selDisk.devname = apiData[tiBackupApi::API_VAR_DEVNAME];
+            DeviceDiskPartition part = selDisk.getPartitionByUUID(apiData[tiBackupApi::API_VAR_PART_UUID]);
+
+            QByteArray block;
+            QDataStream out(&block, QIODevice::WriteOnly);
+            out.setVersion(QDataStream::Qt_5_9);
+            out << part;
+
+            client->write(block);
+            client->flush();
+        }
+
+        client->disconnectFromServer();
     }
 }
