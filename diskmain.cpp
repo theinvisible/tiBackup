@@ -196,7 +196,7 @@ void DiskMain::onAPIConnected()
         qDebug() << "client api command::" << apiData;
         client->flush();
 
-        if(apiData[tiBackupApi::API_VAR::API_VAR_CMD] == tiBackupApi::API_CMD_START)
+        if(apiData[tiBackupApi::API_VAR::API_VAR_CMD] == QString(tiBackupApi::API_CMD_START))
         {
             QThread* thread = new QThread;
             tiBackupJobWorker* worker = new tiBackupJobWorker();
@@ -210,7 +210,7 @@ void DiskMain::onAPIConnected()
             connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
             thread->start();
         }
-        else if(apiData[tiBackupApi::API_VAR_CMD] == tiBackupApi::API_CMD_DISK_GET_PARTITIONS)
+        else if(apiData[tiBackupApi::API_VAR_CMD] == QString(tiBackupApi::API_CMD_DISK_GET_PARTITIONS))
         {
             DeviceDisk selDisk;
             selDisk.devname = apiData[tiBackupApi::API_VAR_DEVNAME];
@@ -224,7 +224,7 @@ void DiskMain::onAPIConnected()
             client->write(block);
             client->flush();
         }
-        else if(apiData[tiBackupApi::API_VAR_CMD] == tiBackupApi::API_CMD_DISK_GET_PARTITION_BY_DEVNAME_UUID)
+        else if(apiData[tiBackupApi::API_VAR_CMD] == QString(tiBackupApi::API_CMD_DISK_GET_PARTITION_BY_DEVNAME_UUID))
         {
             DeviceDisk selDisk;
             selDisk.devname = apiData[tiBackupApi::API_VAR_DEVNAME];
@@ -238,7 +238,7 @@ void DiskMain::onAPIConnected()
             client->write(block);
             client->flush();
         }
-        else if(apiData[tiBackupApi::API_VAR_CMD] == tiBackupApi::API_CMD_DISK_GET_PARTITION_BY_UUID)
+        else if(apiData[tiBackupApi::API_VAR_CMD] == QString(tiBackupApi::API_CMD_DISK_GET_PARTITION_BY_UUID))
         {
             DeviceDiskPartition part = TiBackupLib::getPartitionByUUID(apiData[tiBackupApi::API_VAR_PART_UUID]);
 
