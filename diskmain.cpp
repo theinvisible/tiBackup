@@ -189,7 +189,7 @@ void DiskMain::onAPIConnected()
 
         QHash<tiBackupApi::API_VAR, QString> apiData;
         QDataStream in(client);
-        in.setVersion(QDataStream::Qt_5_9);
+        in.setVersion(tibackup_config::ipc_version);
         in >> apiData;
 
         //QByteArray tmp = client->readAll();
@@ -218,13 +218,13 @@ void DiskMain::onAPIConnected()
 
             QByteArray block;
             QDataStream out(&block, QIODevice::WriteOnly);
-            out.setVersion(QDataStream::Qt_5_9);
+            out.setVersion(tibackup_config::ipc_version);
             out << selDisk.partitions;
 
             client->write(block);
             client->flush();
         }
-        else if(apiData[tiBackupApi::API_VAR_CMD] == tiBackupApi::API_CMD_DISK_GET_PARTITION_BY_UUID)
+        else if(apiData[tiBackupApi::API_VAR_CMD] == tiBackupApi::API_CMD_DISK_GET_PARTITION_BY_DEVNAME_UUID)
         {
             DeviceDisk selDisk;
             selDisk.devname = apiData[tiBackupApi::API_VAR_DEVNAME];
@@ -232,7 +232,19 @@ void DiskMain::onAPIConnected()
 
             QByteArray block;
             QDataStream out(&block, QIODevice::WriteOnly);
-            out.setVersion(QDataStream::Qt_5_9);
+            out.setVersion(tibackup_config::ipc_version);
+            out << part;
+
+            client->write(block);
+            client->flush();
+        }
+        else if(apiData[tiBackupApi::API_VAR_CMD] == tiBackupApi::API_CMD_DISK_GET_PARTITION_BY_UUID)
+        {
+            DeviceDiskPartition part = TiBackupLib::getPartitionByUUID(apiData[tiBackupApi::API_VAR_PART_UUID]);
+
+            QByteArray block;
+            QDataStream out(&block, QIODevice::WriteOnly);
+            out.setVersion(tibackup_config::ipc_version);
             out << part;
 
             client->write(block);

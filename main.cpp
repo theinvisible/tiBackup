@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
 
     QCoreApplication a(argc, argv);
 
-    DiskMain *observer = new DiskMain();
+    DiskMain observer;
 
     return a.exec();
 }
