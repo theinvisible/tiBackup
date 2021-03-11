@@ -187,7 +187,7 @@ void DiskMain::onAPIConnected()
         connect(client, SIGNAL(disconnected()), client, SLOT(deleteLater()));
         client->waitForReadyRead();
 
-        QHash<tiBackupApi::API_VAR, QString> apiData;
+        QHash<int, QString> apiData;
         QDataStream in(client);
         in.setVersion(tibackup_config::ipc_version);
         in >> apiData;
