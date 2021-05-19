@@ -23,6 +23,8 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 #include "diskmain.h"
 
+#include "iostream"
+
 #include <QDebug>
 #include <QThread>
 #include <QDateTime>
@@ -44,6 +46,8 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
 
     TiBackupLib lib;
     DeviceDisk disk = lib.getAttachedDisks().at(0);
+
+    std::cout << "Starting tiBackup Server " << tibackup_config::version << std::endl;
 
     qDebug() << "DiskMain::DiskMain() -> disk name1:" << disk.devname;
 
@@ -249,6 +253,17 @@ void DiskMain::onAPIConnected()
 
             client->write(block);
             client->flush();
+        }
+        else if(apiData[tiBackupApi::API_VAR_CMD] == QString(tiBackupApi::API_CMD_PART_MOUNT))
+        {
+            DeviceDiskPartition part = TiBackupLib::getPartitionByUUID(apiData[tiBackupApi::API_VAR_PART_UUID]);
+
+            tiBackupJob job;
+            job.encLUKSType = static_cast<tiBackupEncLUKS>(apiData[tiBackupApi::API_VAR_JOB_LUKS_TYPE].toInt());
+            job.encLUKSFilePath = apiData[tiBackupApi::API_VAR_JOB_LUKS_FILEPATH];
+
+            TiBackupLib lib;
+            lib.mountPartition(&part, &job);
         }
 
         client->disconnectFromServer();
