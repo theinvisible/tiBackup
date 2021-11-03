@@ -121,7 +121,8 @@ void DiskMain::onDiskAdded(DeviceDisk *disk)
             if(job->start_backup_on_hotplug == false)
                 continue;
 
-            job->startBackup(&part);
+            //job->startBackup(&part);
+            job->startBackupThread();
         }
     }
 }
@@ -151,7 +152,7 @@ void DiskMain::onTaskCheck()
             if(curDate.toString("hh:mm") == job->intervalTime)
             {
                 qDebug() << "we start task for backup id " << job->name;
-                job->startBackup();
+                job->startBackupThread();
             }
             break;
         }
@@ -161,7 +162,7 @@ void DiskMain::onTaskCheck()
             if(curDate.toString("hh:mm") == job->intervalTime && (curDate.date().dayOfWeek()-1) == job->intervalDay)
             {
                 qDebug() << "we start task for backup id " << job->name;
-                job->startBackup();
+                job->startBackupThread();
             }
             break;
         }
@@ -171,7 +172,7 @@ void DiskMain::onTaskCheck()
             if(curDate.toString("hh:mm") == job->intervalTime && curDate.date().day() == job->intervalDay)
             {
                 qDebug() << "we start task for backup id " << job->name;
-                job->startBackup();
+                job->startBackupThread();
             }
             break;
         }
@@ -202,6 +203,11 @@ void DiskMain::onAPIConnected()
 
         if(apiData[tiBackupApi::API_VAR::API_VAR_CMD] == QString(tiBackupApi::API_CMD_START))
         {
+            tiConfBackupJobs objjobs;
+            objjobs.readBackupJobs();
+            tiBackupJob* job = objjobs.getJobByName(apiData[tiBackupApi::API_VAR_BACKUPJOB]);
+            job->startBackupThread();
+            /*
             QThread* thread = new QThread;
             tiBackupJobWorker* worker = new tiBackupJobWorker();
             worker->setJobName(apiData[tiBackupApi::API_VAR_BACKUPJOB]);
@@ -213,6 +219,7 @@ void DiskMain::onAPIConnected()
             connect(worker, SIGNAL(finished()), worker, SLOT(deleteLater()));
             connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
             thread->start();
+            */
         }
         else if(apiData[tiBackupApi::API_VAR_CMD] == QString(tiBackupApi::API_CMD_DISK_GET_PARTITIONS))
         {
