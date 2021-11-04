@@ -28,6 +28,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QLocalServer>
 
 #include "tibackuplib.h"
+#include "backupmanager.h"
 
 class DiskMain : public QObject
 {
@@ -45,6 +46,7 @@ public slots:
 
 private:
     QLocalServer *apiServer;
+    backupManager *manager;
 
 };
 

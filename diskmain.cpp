@@ -43,11 +43,9 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 DiskMain::DiskMain(QObject *parent) : QObject(parent)
 {
-
+    /*
     TiBackupLib lib;
     DeviceDisk disk = lib.getAttachedDisks().at(0);
-
-    std::cout << "Starting tiBackup Server " << tibackup_config::version << std::endl;
 
     qDebug() << "DiskMain::DiskMain() -> disk name1:" << disk.devname;
 
@@ -61,6 +59,11 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
         DeviceDiskPartition diskpart = disk.partitions.at(i);
         qDebug() << "DiskMain::DiskMain() -> part" << i << "=" << diskpart.name;
     }
+    */
+
+    std::cout << "Starting tiBackup Server " << tibackup_config::version << std::endl;
+
+    manager = new backupManager(this);
 
     QThread* thread = new QThread;
     DiskWatcher* worker = new DiskWatcher();
@@ -122,7 +125,7 @@ void DiskMain::onDiskAdded(DeviceDisk *disk)
                 continue;
 
             //job->startBackup(&part);
-            job->startBackupThread();
+            manager->startBackup(job->name);
         }
     }
 }
@@ -152,7 +155,7 @@ void DiskMain::onTaskCheck()
             if(curDate.toString("hh:mm") == job->intervalTime)
             {
                 qDebug() << "we start task for backup id " << job->name;
-                job->startBackupThread();
+                manager->startBackup(job->name);
             }
             break;
         }
@@ -162,7 +165,7 @@ void DiskMain::onTaskCheck()
             if(curDate.toString("hh:mm") == job->intervalTime && (curDate.date().dayOfWeek()-1) == job->intervalDay)
             {
                 qDebug() << "we start task for backup id " << job->name;
-                job->startBackupThread();
+                manager->startBackup(job->name);
             }
             break;
         }
@@ -172,7 +175,7 @@ void DiskMain::onTaskCheck()
             if(curDate.toString("hh:mm") == job->intervalTime && curDate.date().day() == job->intervalDay)
             {
                 qDebug() << "we start task for backup id " << job->name;
-                job->startBackupThread();
+                manager->startBackup(job->name);
             }
             break;
         }
@@ -206,7 +209,7 @@ void DiskMain::onAPIConnected()
             tiConfBackupJobs objjobs;
             objjobs.readBackupJobs();
             tiBackupJob* job = objjobs.getJobByName(apiData[tiBackupApi::API_VAR_BACKUPJOB]);
-            job->startBackupThread();
+            manager->startBackup(job->name);
             /*
             QThread* thread = new QThread;
             tiBackupJobWorker* worker = new tiBackupJobWorker();
