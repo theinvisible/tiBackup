@@ -3,7 +3,7 @@ stages:
   - build
 
 variables:
-  TIBACKUPLIB_DEV_RELEASE: "0.7.2-1"
+  TIBACKUPLIB_DEV_RELEASE: "0.7.4-1"
 
 .build_template: &build_template_def
   before_script:
@@ -17,6 +17,29 @@ variables:
     - echo " -- Rene Hadler <rene@hadler.me>  ${CI_T_DATE}"                              >> ./debian/changelog
 
 # Stage "ubuntu"
+build-ubuntu-2204-64-dev:  
+  <<: *build_template_def
+  stage: build
+  script:
+    - mkdir build
+    - sudo apt update && sudo apt install tibackuplib tibackuplib-dev -y
+    - echo "y" | debuild -- clean
+    - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
+    - mv ../tibackup_*.deb build/
+    - upload_build_dev build/tibackup*.deb || true
+    - sudo apt purge tibackuplib-dev -y && sudo apt autoremove -y
+
+  # The files which are to be made available in GitLab
+  artifacts:
+    paths:
+      - build/*
+
+  tags:
+    - build-ubuntu-2204-64
+
+  only:
+    - master
+
 build-ubuntu-2004-64-dev:  
   <<: *build_template_def
   stage: build
@@ -137,6 +160,28 @@ build-debian-9-64-dev:
     - master
 
 # Stage "ubuntu"
+build-ubuntu-2204-64:  
+  stage: build
+  script:
+    - mkdir build
+    - sudo apt update && sudo apt install tibackuplib=$TIBACKUPLIB_DEV_RELEASE tibackuplib-dev=$TIBACKUPLIB_DEV_RELEASE -y --allow-downgrades
+    - echo "y" | debuild -- clean
+    - echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=4" -us -uc
+    - mv ../tibackup_*.deb build/
+    - upload_build_release build/tibackup*.deb || true
+    - sudo apt purge tibackuplib tibackuplib-dev -y && sudo apt autoremove -y
+
+  # The files which are to be made available in GitLab
+  artifacts:
+    paths:
+      - build/*
+
+  tags:
+    - build-ubuntu-2204-64
+
+  only:
+    - tags
+
 build-ubuntu-2004-64:  
   stage: build
   script:
