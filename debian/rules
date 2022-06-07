@@ -10,3 +10,6 @@ override_dh_auto_install:
 	cp -a tiBackup debian/tibackup/usr/bin/.
 	cp -a init.d/tibackup debian/tibackup/etc/init.d/.
 	cp -a systemd/tibackupd.service debian/tibackup/etc/systemd/system/.
+
+override_dh_builddeb:
+	dh_builddeb -- -Zxz
