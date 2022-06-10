@@ -43,24 +43,6 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 DiskMain::DiskMain(QObject *parent) : QObject(parent)
 {
-    /*
-    TiBackupLib lib;
-    DeviceDisk disk = lib.getAttachedDisks().at(0);
-
-    qDebug() << "DiskMain::DiskMain() -> disk name1:" << disk.devname;
-
-    disk.readPartitions();
-
-    qDebug() << "DiskMain::DiskMain() -> disk name2:" << disk.devname;
-    qDebug() << "DiskMain::DiskMain() -> part found:" << disk.partitions.count();
-
-    for(int i=0; i < disk.partitions.count(); i++)
-    {
-        DeviceDiskPartition diskpart = disk.partitions.at(i);
-        qDebug() << "DiskMain::DiskMain() -> part" << i << "=" << diskpart.name;
-    }
-    */
-
     std::cout << "Starting tiBackup Server " << tibackup_config::version << std::endl;
 
     manager = new backupManager(this);
@@ -210,19 +192,6 @@ void DiskMain::onAPIConnected()
             objjobs.readBackupJobs();
             tiBackupJob* job = objjobs.getJobByName(apiData[tiBackupApi::API_VAR_BACKUPJOB]);
             manager->startBackup(job->name);
-            /*
-            QThread* thread = new QThread;
-            tiBackupJobWorker* worker = new tiBackupJobWorker();
-            worker->setJobName(apiData[tiBackupApi::API_VAR_BACKUPJOB]);
-            worker->moveToThread(thread);
-            //connect(worker, SIGNAL(error(QString)), this, SLOT(errorString(QString)));
-            connect(thread, SIGNAL(started()), worker, SLOT(process()));
-            //connect(worker, SIGNAL(finished()), this, SLOT(onManualBackupFinished()));
-            connect(worker, SIGNAL(finished()), thread, SLOT(quit()));
-            connect(worker, SIGNAL(finished()), worker, SLOT(deleteLater()));
-            connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
-            thread->start();
-            */
         }
         else if(apiData[tiBackupApi::API_VAR_CMD] == QString(tiBackupApi::API_CMD_DISK_GET_PARTITIONS))
         {
@@ -274,6 +243,28 @@ void DiskMain::onAPIConnected()
 
             TiBackupLib lib;
             lib.mountPartition(&part, &job);
+        }
+        else if(apiData[tiBackupApi::API_VAR_CMD] == QString(tiBackupApi::API_CMD_BACKUP_STATUS))
+        {
+            if(apiData.contains(tiBackupApi::API_VAR_BACKUPJOB)) {
+                backupManager::backupStatus stat = manager->getBackupStatus(apiData[tiBackupApi::API_VAR_BACKUPJOB]);
+                QByteArray block;
+                QDataStream out(&block, QIODevice::WriteOnly);
+                out.setVersion(tibackup_config::ipc_version);
+                out << stat;
+
+                client->write(block);
+                client->flush();
+            } else {
+                QHash<QString, backupManager::backupStatus> *stat = manager->getBackupStatus();
+                QByteArray block;
+                QDataStream out(&block, QIODevice::WriteOnly);
+                out.setVersion(tibackup_config::ipc_version);
+                out << *stat;
+
+                client->write(block);
+                client->flush();
+            }
         }
 
         client->disconnectFromServer();
