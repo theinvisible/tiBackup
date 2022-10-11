@@ -104,7 +104,7 @@ void IndexCtrl::serviceBackupLog(HttpRequest &request, HttpResponse &response)
     t.enableWarnings();
 
     t.setVariable("name", request.getParameter("name"));
-    QString logfile = QString("%1/%2.log").arg(backupdetaildir, request.getParameter("name"));
+    QString logfile = QString("%1/%2.log").arg(backupdetaildir, QString(request.getParameter("name")));
     qDebug() << "logfile" << logfile;
 
     QFile file(logfile);
