@@ -17,11 +17,19 @@ TEMPLATE = app
 
 SOURCES += main.cpp \
     diskmain.cpp \
-    diskwatcher.cpp
+    diskwatcher.cpp \
+    global.cpp \
+    httpctrl/indexctrl.cpp \
+    httprequestmapper.cpp \
+    httpserve.cpp
 
 HEADERS += \
     diskmain.h \
-    diskwatcher.h
+    diskwatcher.h \
+    global.h \
+    httpctrl/indexctrl.h \
+    httprequestmapper.h \
+    httpserve.h
 
 unix {
     message(Building for Unix)
@@ -38,4 +46,16 @@ DISTFILES += \
     .gitlab-ci.yml \
     debian/changelog \
     debian/control \
-    systemd/tibackupd.service
+    debian/rules \
+    etc/tibackup_http.ini \
+    systemd/tibackupd.service \
+    var/tibackup_http.ini \
+    var/www/docroot/index.html
+
+#---------------------------------------------------------------------------------------
+# The following lines include the sources of the QtWebAppLib library
+#---------------------------------------------------------------------------------------
+
+include(QtWebApp/logging/logging.pri)
+include(QtWebApp/httpserver/httpserver.pri)
+include(QtWebApp/templateengine/templateengine.pri)

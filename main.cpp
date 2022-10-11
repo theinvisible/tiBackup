@@ -25,6 +25,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QFile>
 #include <QTextStream>
 #include <QDateTime>
+#include <httpserve.h>
 
 #include <ticonf.h>
 #include <diskmain.h>
@@ -76,6 +77,7 @@ int main(int argc, char *argv[])
     qRegisterMetaType<DeviceDiskPartition>("DeviceDiskPartition");
 
     QCoreApplication a(argc, argv);
+    new httpserve(&a);
 
     DiskMain observer;
 

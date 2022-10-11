@@ -6,10 +6,14 @@
 override_dh_auto_install:
 	mkdir -p debian/tibackup/usr/bin
 	mkdir -p debian/tibackup/etc/init.d
+	mkdir -p debian/tibackup/etc/tibackup
 	mkdir -p debian/tibackup/etc/systemd/system
+	mkdir -p debian/tibackup/var/lib/tibackup/www
 	cp -a tiBackup debian/tibackup/usr/bin/.
+	cp -a etc/tibackup_http.ini debian/tibackup/etc/tibackup/.
 	cp -a init.d/tibackup debian/tibackup/etc/init.d/.
 	cp -a systemd/tibackupd.service debian/tibackup/etc/systemd/system/.
+	cp -a var/www/* debian/tibackup/var/lib/tibackup/www/.
 
 override_dh_builddeb:
 	dh_builddeb -- -Zxz
