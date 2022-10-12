@@ -7,7 +7,8 @@
 <div class="col-12 p-2" style="background-color: #eef3f8;">
     <div class="row">
         <div class="col-2"><a href="/"><img src="/tibackup.png" style="width: 60px"></a></div>
-        <div class="col-8"><h1>tiBackup Backupstatus</h1></div>
+        <div class="col-4"><h1>tiBackup Backupstatus</h1></div>
+        <div class="col-4" style="margin-top: auto; margin-bottom: auto;">Information time: <span id="info_time" style="color: darkgreen;">time</span> <a href="javascript: location.reload();">Refresh</a></div>
         <div class="col text-right"><img src="/iteas-logo.png" style="width: 150px"></div>
     </div>
 </div>
@@ -59,6 +60,14 @@
         </div>
     </div>
 </div>
+<script>
+    // self executing function here
+    (function() {
+        let d = new Date();
+        let dstring = `${d.toTimeString()}`.split(" ");
+        document.getElementById("info_time").innerText = dstring[0];
+    })();
+</script>
 </body>
 </header>
 </html>
