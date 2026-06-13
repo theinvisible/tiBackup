@@ -15,7 +15,7 @@ Template::Template(const QString source, const QString sourceName)
     this->warnings=false;
 }
 
-Template::Template(QFile& file, const QTextCodec* textCodec)
+Template::Template(QFile& file, QStringConverter::Encoding encoding)
 {
     this->warnings=false;
     sourceName=QFileInfo(file.fileName()).baseName();
@@ -31,7 +31,9 @@ Template::Template(QFile& file, const QTextCodec* textCodec)
     }
     else
     {
-        append(textCodec->toUnicode(data));
+        QStringDecoder decoder(encoding);
+        QString text=decoder(data);
+        append(text);
     }
 }
 

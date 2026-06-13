@@ -9,7 +9,7 @@
 #include <QString>
 #include <QSettings>
 #include <QMutex>
-#include <QTextCodec>
+#include <QStringConverter>
 #include "templateglobal.h"
 #include "template.h"
 
@@ -78,8 +78,8 @@ protected:
     /** Suffix to the filenames */
     QString fileNameSuffix;
 
-    /** Codec for decoding the files */
-    QTextCodec* textCodec;
+    /** Encoding for decoding the files */
+    QStringConverter::Encoding encoding;
 };
 
 } // end of namespace

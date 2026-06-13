@@ -33,16 +33,25 @@ TemplateLoader::TemplateLoader(const QSettings *settings, QObject *parent)
         templatePath=QFileInfo(configFile.absolutePath(),templatePath).absoluteFilePath();
     }
     fileNameSuffix=settings->value("suffix",".tpl").toString();
-    QString encoding=settings->value("encoding").toString();
-    if (encoding.isEmpty())
+    QString encodingName=settings->value("encoding").toString();
+    if (encodingName.isEmpty())
     {
-        textCodec=QTextCodec::codecForLocale();
+        encoding=QStringConverter::System;
     }
     else
     {
-       textCodec=QTextCodec::codecForName(encoding.toLocal8Bit());
+        auto e=QStringConverter::encodingForName(encodingName.toLatin1().constData());
+        if (e.has_value())
+        {
+            encoding=e.value();
+        }
+        else
+        {
+            qWarning("TemplateLoader: unsupported encoding '%s', using UTF-8",qPrintable(encodingName));
+            encoding=QStringConverter::Utf8;
+        }
     }
-    qDebug("TemplateLoader: path=%s, codec=%s",qPrintable(templatePath),qPrintable(encoding));
+    qDebug("TemplateLoader: path=%s, codec=%s",qPrintable(templatePath),qPrintable(encodingName));
 }
 
 TemplateLoader::~TemplateLoader()
@@ -55,7 +64,8 @@ QString TemplateLoader::tryFile(QString localizedName)
     QFile file(fileName);
     if (file.exists()) {
         file.open(QIODevice::ReadOnly);
-        QString document=textCodec->toUnicode(file.readAll());
+        QStringDecoder decoder(encoding);
+        QString document=decoder(file.readAll());
         file.close();
         if (file.error())
         {

@@ -8,7 +8,7 @@
 
 #include <QString>
 #include <QIODevice>
-#include <QTextCodec>
+#include <QStringConverter>
 #include <QFile>
 #include <QString>
 #include "templateglobal.h"
@@ -38,7 +38,7 @@ namespace stefanfrings {
  <p>
  Example code to fill this template:
  <p><code><pre>
- Template t(QFile("test.tpl"),QTextCode::codecForName("UTF-8"));
+ Template t(QFile("test.tpl"),QStringConverter::Utf8);
  t.setVariable("username", "Stefan");
  t.setCondition("locked",false);
  t.loop("user",2);
@@ -103,11 +103,11 @@ public:
       cache template files by itself, so using this constructor is only recommended
       to be used on local filesystem.
       @param file File that provides the source text
-      @param textCodec Encoding of the source
+      @param encoding Encoding of the source
       @see TemplateLoader
       @see TemplateCache
     */
-    Template(QFile &file, const QTextCodec* textCodec);
+    Template(QFile &file, QStringConverter::Encoding encoding = QStringConverter::Utf8);
 
     /**
       Replace a variable by the given value.
