@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(tiBackup VERSION 0.8.0 LANGUAGES CXX)
+# No version here on purpose: the version is maintained centrally in
+# tiBackupLib (project(... VERSION ...) in ../tiBackupLib/CMakeLists.txt) and
+# reaches the server at runtime via the shared, generated config.h
+# (tibackup_config::version).
+project(tiBackup LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
