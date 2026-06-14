@@ -1,48 +1,48 @@
-tibackup (0.8.0-1) precise; urgency=low
+tibackup (0.8.0) unstable; urgency=low
 
   * Migrate to Qt6 and CMake build system (drop qmake)
   * For changelog see git commits
 
- -- Rene Hadler <rene@iksdeh.at>  Sat, 13 Jun 2026 12:00:00 +0200
+ -- Rene Hadler <rene@hadler.me>  Sat, 13 Jun 2026 12:00:00 +0200
 
 tibackup (0.7.4-2) precise; urgency=low
 
   * For changelog see git commits
 
--- Rene Hadler <rene@iksdeh.at>  Wed, 12 Oct 2022 8:02:00 +0100
+ -- Rene Hadler <rene@hadler.me>  Wed, 12 Oct 2022 08:02:00 +0100
 
 tibackup (0.7.3-1) precise; urgency=low
 
   * For changelog see git commits
 
--- Rene Hadler <rene@iksdeh.at>  Wed, 8 Jun 2022 16:05:00 +0100
+ -- Rene Hadler <rene@hadler.me>  Wed, 8 Jun 2022 16:05:00 +0100
 
 tibackup (0.6.2-2) precise; urgency=low
 
   * For changelog see git commits
 
--- Rene Hadler <rene@iksdeh.at>  Tue, 10 Mar 2021 15:05:00 +0100
+ -- Rene Hadler <rene@hadler.me>  Tue, 10 Mar 2021 15:05:00 +0100
 
 tibackup (0.6.0-2) precise; urgency=low
 
   * Add support for LUKS encryption
 
- -- Rene Hadler <rene@iksdeh.at>  Tue, 3 Jul 2019 10:05:00 +0100
+ -- Rene Hadler <rene@hadler.me>  Tue, 3 Jul 2019 10:05:00 +0100
 
 tibackup (0.5.0-1) precise; urgency=low
 
   * Ported to Qt5
 
- -- Rene Hadler <rene@iksdeh.at>  Tue, 23 Oct 2016 18:07:00 +0100
+ -- Rene Hadler <rene@hadler.me>  Tue, 23 Oct 2016 18:07:00 +0100
 
 tibackup (0.4.0-1) precise; urgency=low
 
   * GIT Upstream release
 
- -- Rene Hadler <rene@iksdeh.at>  Tue, 06 Jan 2016 17:01:00 +0100
+ -- Rene Hadler <rene@hadler.me>  Tue, 06 Jan 2016 17:01:00 +0100
 
 tibackup (0.3.0-1) precise; urgency=low
 
   * Initial debian/ubuntu release
 
- -- Rene Hadler <rene@iksdeh.at>  Tue, 31 Dec 2015 10:01:00 +0100
+ -- Rene Hadler <rene@hadler.me>  Tue, 31 Dec 2015 10:01:00 +0100

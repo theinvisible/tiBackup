@@ -1,13 +1,19 @@
 Source: tibackup
 Section: admin
 Priority: optional
-Maintainer: Rene Hadler <rene@iksdeh.at>
-Build-Depends: debhelper (>= 8.0.0), cmake, qt6-base-dev, qt6-httpserver-dev, qt6-websockets-dev
+Maintainer: Rene Hadler <rene@hadler.me>
+Build-Depends: debhelper-compat (= 13), cmake, qt6-base-dev, qt6-httpserver-dev, qt6-websockets-dev
+Standards-Version: 4.7.0
+Homepage: https://github.com/theinvisible/tiBackup
+Rules-Requires-Root: no
 
 Package: tibackup
 Architecture: amd64
-Depends: ${shlibs:Depends}, tibackuplib (>= 0.8.0), libqt6httpserver6, libqt6websockets6
-Conflicts:
-Replaces:
-Provides: tibackup
-Description: Main tibackup program
+Depends: ${shlibs:Depends}, ${misc:Depends}, tibackuplib (>= 0.8.0), libqt6httpserver6, libqt6websockets6
+Description: intelligent disk-based backup daemon for Linux
+ tiBackup runs scheduled and hotplug-triggered backups to local and USB disks
+ using rsync, with optional LUKS encryption, pre/post scripts, e-mail
+ notifications and Proxmox Backup Server integration.
+ .
+ This package contains the root daemon (tibackupd) and its built-in,
+ login-protected web UI.

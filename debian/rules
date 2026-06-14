@@ -5,14 +5,16 @@
 
 override_dh_auto_install:
 	mkdir -p debian/tibackup/usr/bin
-	mkdir -p debian/tibackup/etc/init.d
 	mkdir -p debian/tibackup/etc/tibackup
-	mkdir -p debian/tibackup/etc/systemd/system
 	mkdir -p debian/tibackup/var/lib/tibackup/www
 	cp -a obj-x86_64-linux-gnu/tiBackup debian/tibackup/usr/bin/.
-	cp -a init.d/tibackup debian/tibackup/etc/init.d/.
-	cp -a systemd/tibackupd.service debian/tibackup/etc/systemd/system/.
 	cp -a var/www/* debian/tibackup/var/lib/tibackup/www/.
+
+# The tibackupd systemd unit ships as debian/tibackup.tibackupd.service. Because
+# the unit name (tibackupd) differs from the package name (tibackup), dh_installsystemd
+# needs --name to pick it up, install it to /usr/lib/systemd/system and enable/start it.
+override_dh_installsystemd:
+	dh_installsystemd --name=tibackupd
 
 override_dh_builddeb:
 	dh_builddeb -- -Zxz
