@@ -46,6 +46,7 @@ jobs:
             ca-certificates git \
             build-essential fakeroot devscripts debhelper cmake \
             qt6-base-dev qt6-base-dev-tools \
+            qt6-httpserver-dev qt6-websockets-dev \
             libpoco-dev libudev-dev libblkid-dev uuid-dev \
             rsync cryptsetup
 
