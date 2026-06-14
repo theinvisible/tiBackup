@@ -1,30 +1,101 @@
-This program tries to bring an important feature on the desktop and server for Linux: Backup
+# tiBackup
 
-![alt text](https://hadler.me/wordpress/wp-content/uploads/2014/08/tibackup1.png "tiBackupUi")
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
+[![build-check](https://github.com/theinvisible/tiBackup/actions/workflows/build.yml/badge.svg)](https://github.com/theinvisible/tiBackup/actions/workflows/build.yml)
+[![Hosted By: Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 
-For a more detailed information why this project was made look in my post
+Backup daemon of **tiBackup** — an intelligent, disk-based backup system for Linux
+desktops and servers. Plug in a USB disk and a predefined backup job runs
+automatically, or schedule jobs daily/weekly/monthly — with rsync, optional LUKS
+encryption, pre/post scripts, e-mail notifications and Proxmox Backup Server
+integration.
 
-The main features of the program are:
+> **This repository** contains `tiBackup`, the background **daemon** (`tibackupd`).
+> It runs as **root**, listens for udev/hotplug and scheduled events, and performs
+> the actual privileged work (mount, rsync, LUKS). It exposes a local **IPC API**
+> (for the GUI) and an **HTTP status page**. See [Architecture](#architecture).
 
-    Make hotplug backups (you connect a disk to your computer and the tiBackup starts your predefined backup job)
-    Feature to send notification to eMailadress when backup is finished
-    Feature to execute a custom script before backup starts and after finished (special tiBackup VARS can be used to make it even more dynamic)
-    Use all available disks for backups
-    Backups can be started manually for testing
-    GUI for comfortable configuration of all settings but …
-    Scheduled backups (daily, weekly, monthly)
-    all settings are in simple .ini format, so you can also run tiBackup on a terminal only server
+## Architecture
 
-It is best to start with the GUI tool to make the initial configuration. The configuration is saved in path “/usr/local/etc/tibackup”, you can also edit the configuration by a texteditor. Daemon and GUI tool must be run as root (sudo, gksu, pkecex) as system files/devices must be accessed (libblkid for example)
+tiBackup consists of three parts:
 
-Please note there is no documentation and configuration examples now. You should know about compilation of QT projects (qmake) and program dependencies in general if you want to compile it yourself. Also the program is still in beta state, so be warned.
+| Component | Role |
+|-----------|------|
+| **[tiBackupLib](https://github.com/theinvisible/tiBackupLib)** | Shared core library (config, IPC, device handling, backup engine). |
+| **[tiBackup](https://github.com/theinvisible/tiBackup)** | Background daemon (`tibackupd`), runs as **root**, performs the actual backups and exposes an IPC + HTTP status API. |
+| **[tiBackupUi](https://github.com/theinvisible/tiBackupUi)** | Qt Widgets GUI to configure jobs and settings; runs **unprivileged** and talks to the daemon over IPC. |
 
-This program consists of three parts:
+All privileged operations live in the daemon. The GUI is an unprivileged client
+that asks the daemon to perform config writes, mounts, service control and
+backups over the IPC socket — so you never need to run the GUI as root.
 
-    tiBackupLib – Core library providing functions to GUI and Daemon
-    tiBackup – Backup daemon in background listening to udev/backup events
-    tiBackupUI – GUI tool for configuring the program (optional)
+## Features
 
-It is always recommended to use the GIT “master” branch as i (should) always commit a working version of code.
+- **Hotplug backups** — connect a disk and the matching job starts automatically
+- **Scheduled backups** — daily, weekly or monthly
+- **rsync-based** incremental file backups, with optional checksum comparison
+- **LUKS encryption** support for backup targets
+- **Proxmox Backup Server (PBS)** integration
+- **E-mail notifications** when a job finishes (SMTP)
+- **Pre/post-backup scripts** with dynamic tiBackup variables
+- **HTTP status page** to monitor running/finished backups
+- Simple **INI configuration** under `/etc/tibackup` — usable on headless servers
 
-Compile the programs in the order shown above. As dependencies there are the qt-core libraries (for GUI also the main QT libraries), libblkid (should be installed on every modern system) and POCO libraries (http://pocoproject.org/) needed. Please make sure the dependencies are found in your system (copy them in system path or edit the .pro files). Then just execute the compiled binaries for tiBackup and tiBackupUI.
+## Installation
+
+Pre-built Debian/Ubuntu packages are published via Cloudsmith:
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/theinvisible/tibackup/setup.deb.sh' | sudo -E bash
+sudo apt install tibackup            # add tibackupui for the graphical client
+```
+
+This installs the `tibackupd` systemd service. Enable and start it:
+
+```bash
+sudo systemctl enable --now tibackupd
+```
+
+## Configuration & running
+
+- The daemon runs as **root** via the `tibackupd` systemd service.
+- Configuration lives under **`/etc/tibackup/`** (plain INI files); it is created
+  on first start. You normally configure everything through the GUI, but the files
+  can also be edited by hand on headless servers.
+- The daemon listens on a local IPC socket that is restricted to the **`tibackup`**
+  group. To let a user drive it from the unprivileged GUI, add them to that group:
+
+  ```bash
+  sudo usermod -aG tibackup "$USER"   # then log out and back in
+  ```
+
+## Building from source
+
+Requirements (Debian/Ubuntu):
+
+```bash
+sudo apt install build-essential cmake qt6-base-dev \
+    libpoco-dev libudev-dev libblkid-dev uuid-dev rsync cryptsetup
+```
+
+Build `tiBackupLib` first (or check it out next to this repository so it is built
+automatically), then:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+```
+
+The HTTP server is based on the vendored [QtWebApp](http://stefanfrings.de/qtwebapp/)
+library, included under `QtWebApp/`.
+
+## License
+
+Licensed under the **GNU General Public License v3.0 or later** (`GPL-3.0-or-later`).
+See [LICENSE](LICENSE).
+
+## Package hosting
+
+Package repository hosting is graciously provided by [Cloudsmith](https://cloudsmith.com).
+Cloudsmith is the only fully hosted, cloud-native, universal package management
+solution that lets you manage your software supply chain with confidence.
