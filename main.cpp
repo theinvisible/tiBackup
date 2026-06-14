@@ -25,10 +25,12 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QFile>
 #include <QTextStream>
 #include <QDateTime>
-#include <httpserve.h>
+#include <QStringList>
 
 #include <ticonf.h>
 #include <diskmain.h>
+#include "webserver/webserver.h"
+#include "webserver/auth/passwordhash.h"
 
 QFile *tibackupLog = 0;
 
@@ -70,6 +72,34 @@ void logMessageOutput(QtMsgType type, const QMessageLogContext &, const QString 
     tibackupLog->flush();
 }
 
+// Headless provisioning of the web admin password: `tiBackup --set-web-password`
+// (run as root). Reads the new password from stdin and stores a salted hash in
+// /etc/tibackup/main.conf, then exits without starting the daemon.
+static int setWebPassword()
+{
+    QTextStream err(stderr);
+    QTextStream in(stdin);
+
+    err << "Enter new tiBackup web admin password: ";
+    err.flush();
+    const QString pw = in.readLine();
+
+    if(pw.size() < 8)
+    {
+        err << "Password must be at least 8 characters.\n";
+        return 1;
+    }
+
+    tiConfMain cfg;
+    const QByteArray salt = passwordhash::generateSalt();
+    cfg.setValue("web/salt", QString::fromLatin1(salt));
+    cfg.setValue("web/passhash", passwordhash::hash(pw, salt));
+    cfg.sync();
+
+    err << "Web admin password updated.\n";
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     qInstallMessageHandler(logMessageOutput);
@@ -77,9 +107,14 @@ int main(int argc, char *argv[])
     qRegisterMetaType<DeviceDiskPartition>("DeviceDiskPartition");
 
     QCoreApplication a(argc, argv);
-    new httpserve(&a);
 
+    if(a.arguments().contains(QStringLiteral("--set-web-password")))
+        return setWebPassword();
+
+    // DiskMain owns the backupManager that the scheduler/hotplug paths use; the
+    // web UI drives manual backups and live status from that SAME instance.
     DiskMain observer;
+    WebServer web(observer.getManager(), &a);
 
     return a.exec();
 }

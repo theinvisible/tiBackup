@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tiBackup</title>
+  <link rel="icon" href="img/tibackup.png">
+  <link rel="stylesheet" href="css/open-props.min.css">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="js/api.js" defer></script>
+  <script src="js/ws.js" defer></script>
+  <script src="js/app.js" defer></script>
+  <script src="js/vendor/alpine.min.js" defer></script>
+</head>
+<body x-data="app()" x-init="init()" x-cloak>
+
+  <!-- loading ----------------------------------------------------------- -->
+  <div class="center-screen" x-show="view==='loading'"><div class="spinner"></div></div>
+
+  <!-- setup ------------------------------------------------------------- -->
+  <div class="center-screen" x-show="view==='setup'">
+    <form class="card auth-card" @submit.prevent="doSetup()">
+      <img src="img/tibackup.png" alt="tiBackup" class="auth-logo">
+      <h1>Welcome to tiBackup</h1>
+      <p class="muted">Set an administrator password to secure the web interface.</p>
+      <label>New password<input type="password" x-model="setupPw" autocomplete="new-password" required></label>
+      <label>Repeat password<input type="password" x-model="setupPw2" autocomplete="new-password" required></label>
+      <p class="error" x-show="setupErr" x-text="setupErr"></p>
+      <button class="btn btn-primary" :disabled="busy">Create &amp; sign in</button>
+    </form>
+  </div>
+
+  <!-- login ------------------------------------------------------------- -->
+  <div class="center-screen" x-show="view==='login'">
+    <form class="card auth-card" @submit.prevent="doLogin()">
+      <img src="img/tibackup.png" alt="tiBackup" class="auth-logo">
+      <h1>tiBackup</h1>
+      <p class="muted">Sign in to manage your backups.</p>
+      <label>Password<input type="password" x-model="loginPw" autocomplete="current-password" required></label>
+      <p class="error" x-show="loginErr" x-text="loginErr"></p>
+      <button class="btn btn-primary" :disabled="busy">Sign in</button>
+    </form>
+  </div>
+
+  <!-- app --------------------------------------------------------------- -->
+  <template x-if="view==='app'">
+  <div class="app">
+    <header class="topnav">
+      <div class="brand"><img src="img/tibackup.png" alt="" class="brand-logo"><span>tiBackup</span></div>
+      <nav class="nav">
+        <button :class="{active: page==='dashboard'}" @click="go('dashboard')">Dashboard</button>
+        <button :class="{active: page==='pbs'}" @click="go('pbs')">PBS</button>
+        <button :class="{active: page==='settings'}" @click="go('settings')">Settings</button>
+        <button :class="{active: page==='logs'}" @click="go('logs')">Logs</button>
+      </nav>
+      <div class="topnav-right">
+        <span class="live" :class="{'live-on': wsLive}" :title="wsLive ? 'Live (WebSocket)' : 'Polling'"></span>
+        <span class="version" x-text="'v'+(health.version||'')"></span>
+        <button class="icon-btn" @click="aboutOpen=true" title="About tiBackup">ⓘ</button>
+        <button class="icon-btn" @click="toggleTheme()"><span x-text="theme==='dark' ? '☀' : '☾'"></span></button>
+        <button class="btn btn-ghost" @click="doLogout()">Sign out</button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- DASHBOARD ---------------------------------------------------- -->
+      <section x-show="page==='dashboard'">
+        <div class="stats">
+          <div class="card stat"><div class="stat-value" x-text="jobs.length"></div><div class="stat-label">Backup jobs</div></div>
+          <div class="card stat"><div class="stat-value accent-run" x-text="runningCount"></div><div class="stat-label">Running now</div></div>
+          <div class="card stat"><div class="stat-value" x-text="health.initSystem || '—'"></div><div class="stat-label">Init system</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Backup jobs</h2><button class="btn btn-primary btn-sm" style="width:auto" @click="newJob()">+ New job</button></div>
+          <table class="table">
+            <thead><tr><th>Name</th><th>Device</th><th>Status</th><th class="right">Actions</th></tr></thead>
+            <tbody>
+              <template x-for="j in jobs" :key="j.name">
+                <tr>
+                  <td x-text="j.name"></td>
+                  <td class="small muted" x-text="j.device"></td>
+                  <td><span :class="statusClass(j.status)" x-text="j.status"></span></td>
+                  <td class="right nowrap">
+                    <button class="btn btn-ghost btn-sm" @click="startJob(j.name)" :disabled="j.status==='running'">Start</button>
+                    <button class="btn btn-ghost btn-sm" @click="editJob(j.name)">Edit</button>
+                    <button class="btn btn-ghost btn-sm danger" @click="deleteJob(j.name)">Delete</button>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="jobs.length===0"><td colspan="4" class="muted center">No backup jobs yet — create one with “New job”.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Daemon log</h2></div>
+          <pre class="logbox" x-ref="logbox" x-text="logText"></pre>
+        </div>
+      </section>
+
+      <!-- PBS ---------------------------------------------------------- -->
+      <section x-show="page==='pbs'">
+        <div class="card">
+          <div class="card-head"><h2>Proxmox Backup Servers</h2><button class="btn btn-primary btn-sm" style="width:auto" @click="newPbs()">+ Add server</button></div>
+          <table class="table">
+            <thead><tr><th>Name</th><th>Host</th><th>User</th><th class="right">Actions</th></tr></thead>
+            <tbody>
+              <template x-for="s in pbs" :key="s.uuid">
+                <tr>
+                  <td x-text="s.name"></td><td x-text="s.host"></td><td x-text="s.username"></td>
+                  <td class="right nowrap">
+                    <button class="btn btn-ghost btn-sm" @click="editPbs(s.uuid)">Edit</button>
+                    <button class="btn btn-ghost btn-sm danger" @click="deletePbs(s.uuid)">Delete</button>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="pbs.length===0"><td colspan="4" class="muted center">No PBS servers configured.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- SETTINGS ----------------------------------------------------- -->
+      <section x-show="page==='settings'">
+        <template x-if="prefs">
+        <form @submit.prevent="savePrefs()">
+          <div class="card">
+            <div class="card-head"><h2>General</h2></div>
+            <label class="check"><input type="checkbox" x-model="prefs.debug"> Enable debug logging</label>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>Paths</h2></div>
+            <label>Backup job configs<div class="inline"><input x-model="prefs.paths.backupjobs"><button type="button" class="btn btn-ghost btn-sm" @click="pickPrefPath('backupjobs')">Browse</button></div></label>
+            <label>PBS server configs<div class="inline"><input x-model="prefs.paths.pbservers"><button type="button" class="btn btn-ghost btn-sm" @click="pickPrefPath('pbservers')">Browse</button></div></label>
+            <label>Logs<div class="inline"><input x-model="prefs.paths.logs"><button type="button" class="btn btn-ghost btn-sm" @click="pickPrefPath('logs')">Browse</button></div></label>
+            <label>Scripts<div class="inline"><input x-model="prefs.paths.scripts"><button type="button" class="btn btn-ghost btn-sm" @click="pickPrefPath('scripts')">Browse</button></div></label>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>E-mail (SMTP)</h2></div>
+            <label>Server<input x-model="prefs.smtp.server"></label>
+            <label class="check"><input type="checkbox" x-model="prefs.smtp.auth"> Server requires authentication</label>
+            <div class="grid2" x-show="prefs.smtp.auth">
+              <label>Username<input x-model="prefs.smtp.username"></label>
+              <label>Password<input type="password" x-model="prefs.smtp.password"></label>
+            </div>
+          </div>
+          <button class="btn btn-primary" style="width:auto" :disabled="busy">Save settings</button>
+        </form>
+        </template>
+      </section>
+
+      <!-- LOGS --------------------------------------------------------- -->
+      <section x-show="page==='logs'">
+        <div class="card">
+          <div class="card-head"><h2>Backup run logs</h2><button class="btn btn-ghost btn-sm" @click="loadLogs()">Refresh</button></div>
+          <table class="table">
+            <thead><tr><th>Date</th><th>Job</th><th></th></tr></thead>
+            <tbody>
+              <template x-for="r in runs" :key="r.file">
+                <tr><td class="mono small" x-text="r.date"></td><td x-text="r.name"></td>
+                  <td class="right"><button class="btn btn-ghost btn-sm" @click="openRun(r.file)">View</button></td></tr>
+              </template>
+              <tr x-show="runs.length===0"><td colspan="3" class="muted center">No run logs yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============ JOB EDITOR ============ -->
+    <div class="modal-backdrop" x-show="editorOpen" @click.self="editorOpen=false" x-transition.opacity>
+      <div class="modal modal-wide job-editor" x-show="editorOpen" x-transition>
+        <div class="modal-head">
+          <h2 x-text="editorNew ? 'New backup job' : 'Edit backup job'"></h2>
+          <button class="icon-btn" @click="editorOpen=false">✕</button>
+        </div>
+        <div class="tabs">
+          <button :class="{active:editorTab==='general'}" @click="editorTab='general'">General</button>
+          <button :class="{active:editorTab==='folders'}" @click="editorTab='folders'">Folders</button>
+          <button :class="{active:editorTab==='schedule'}" @click="editorTab='schedule'">Schedule</button>
+          <button :class="{active:editorTab==='pbs'}" @click="editorTab='pbs'">Proxmox</button>
+          <button :class="{active:editorTab==='advanced'}" @click="editorTab='advanced'">Advanced</button>
+        </div>
+        <div class="modal-body" x-show="job">
+          <!-- general -->
+          <div x-show="editorTab==='general'">
+            <label>Job name<input x-model="job.name" :disabled="false"></label>
+            <div class="grid2">
+              <label>Device
+                <select x-model="editorDevname" @change="onDeviceChange()">
+                  <option value="">— select device —</option>
+                  <template x-for="d in devices" :key="d.devname">
+                    <option :value="d.devname" x-text="(d.vendor+' '+d.model+' ('+d.devname+')').trim()"></option>
+                  </template>
+                </select>
+              </label>
+              <label>Partition
+                <select x-model="job.partition_uuid" @change="onPartitionChange()">
+                  <option value="">— select partition —</option>
+                  <template x-for="p in editorPartitions" :key="p.uuid">
+                    <option :value="p.uuid" x-text="p.name+'  ['+p.type+']'+(p.label?'  '+p.label:'')"></option>
+                  </template>
+                </select>
+              </label>
+            </div>
+            <p class="small muted" x-show="!editorDevname && job.partition_uuid">Stored partition UUID: <span class="mono" x-text="job.partition_uuid"></span> (device not currently attached)</p>
+            <p class="small" x-show="selectedPartType">Filesystem: <span class="mono" x-text="selectedPartType"></span></p>
+            <div class="inline">
+              <button type="button" class="btn btn-ghost btn-sm" @click="mountForBrowse()" :disabled="!job.partition_uuid">Mount</button>
+              <span class="small" x-show="partInfo">
+                <span x-show="partInfo && partInfo.mounted" class="ok-text">mounted at <span class="mono" x-text="editorMountDir"></span></span>
+                <span x-show="partInfo && !partInfo.mounted" class="muted">not mounted</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- folders -->
+          <div x-show="editorTab==='folders'">
+            <ul class="folder-list">
+              <template x-for="(f,i) in job.backupdirs" :key="i">
+                <li class="folder-item" :class="{editing: folderEditIndex===i}">
+                  <span class="folder-icon" x-html="folderIcon"></span>
+                  <div class="folder-paths">
+                    <span class="folder-src mono" x-text="f.source"></span>
+                    <span class="folder-arrow" aria-hidden="true">→</span>
+                    <span class="folder-dst mono" x-text="f.dest"></span>
+                  </div>
+                  <div class="folder-actions">
+                    <button type="button" class="icon-btn" title="Edit" @click="editFolder(i)">✎</button>
+                    <button type="button" class="icon-btn danger" title="Remove" @click="removeFolder(i)">✕</button>
+                  </div>
+                </li>
+              </template>
+              <li class="folder-empty" x-show="job.backupdirs.length===0">
+                No folders yet — add a source folder and where it should land on the backup disk.
+              </li>
+            </ul>
+
+            <div class="folder-form">
+              <div class="folder-form-head" x-text="folderEditing ? 'Edit folder' : 'Add folder'"></div>
+              <label class="field">
+                <span class="field-label">Source folder</span>
+                <div class="field-row">
+                  <input placeholder="/home/me/documents" x-model="folderSource">
+                  <button type="button" class="btn btn-ghost btn-sm" @click="pickSource()">Browse…</button>
+                </div>
+              </label>
+              <label class="field">
+                <span class="field-label">Destination on backup disk</span>
+                <div class="field-row">
+                  <input placeholder="%MNTBACKUPDIR%/documents" x-model="folderDest">
+                  <button type="button" class="btn btn-ghost btn-sm" @click="pickDest()">Browse…</button>
+                </div>
+              </label>
+              <div class="folder-form-actions">
+                <button type="button" class="btn btn-ghost btn-sm" x-show="folderEditing" @click="cancelFolderEdit()">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" @click="addFolder()" x-text="folderEditing ? 'Save changes' : '+ Add folder'"></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- schedule -->
+          <div x-show="editorTab==='schedule'">
+            <label>Interval
+              <select x-model.number="job.intervalType">
+                <option :value="0">None (manual / hotplug only)</option>
+                <option :value="1">Daily</option>
+                <option :value="2">Weekly</option>
+                <option :value="3">Monthly</option>
+              </select>
+            </label>
+            <div class="grid2" x-show="job.intervalType>0">
+              <label>Time<input type="time" x-model="job.intervalTime"></label>
+              <label x-show="job.intervalType===2">Weekday
+                <select x-model.number="job.intervalDay">
+                  <option :value="0">Monday</option><option :value="1">Tuesday</option><option :value="2">Wednesday</option>
+                  <option :value="3">Thursday</option><option :value="4">Friday</option><option :value="5">Saturday</option><option :value="6">Sunday</option>
+                </select>
+              </label>
+              <label x-show="job.intervalType===3">Day of month<input type="number" min="1" max="31" x-model.number="job.intervalDay"></label>
+            </div>
+          </div>
+
+          <!-- advanced -->
+          <div x-show="editorTab==='advanced'">
+            <div class="card-sub"><h3>Options</h3>
+              <label class="check"><input type="checkbox" x-model="job.delete_add_file_on_dest"> Delete spare files on destination</label>
+              <label class="check"><input type="checkbox" x-model="job.start_backup_on_hotplug"> Start on hotplug</label>
+              <label class="check"><input type="checkbox" x-model="job.save_log"> Save logs</label>
+              <label class="check"><input type="checkbox" x-model="job.compare_via_checksum"> Compare via checksum</label>
+            </div>
+            <div class="card-sub"><h3>Notification</h3>
+              <label class="check"><input type="checkbox" x-model="job.notify"> Notify by e-mail</label>
+              <label x-show="job.notify">Recipients (comma-separated)<input x-model="job.notifyRecipients"></label>
+            </div>
+            <div class="card-sub"><h3>Encryption (LUKS)</h3>
+              <label>Mode
+                <select x-model.number="job.encLUKSType">
+                  <option :value="0">None</option><option :value="1">Key file</option><option :value="2">Generic USB device</option>
+                </select>
+              </label>
+              <div class="inline" x-show="job.encLUKSType===1">
+                <input placeholder="Key file path" x-model="job.encLUKSFilePath">
+                <button type="button" class="btn btn-ghost btn-sm" @click="pickLuksFile()">Browse</button>
+              </div>
+            </div>
+            <div class="card-sub"><h3>Scripts</h3>
+              <div class="inline"><input placeholder="Before-backup script path" x-model="job.scriptBeforeBackup"><button type="button" class="btn btn-ghost btn-sm" @click="openScript('scriptBeforeBackup')">Edit</button></div>
+              <div class="inline"><input placeholder="After-backup script path" x-model="job.scriptAfterBackup"><button type="button" class="btn btn-ghost btn-sm" @click="openScript('scriptAfterBackup')">Edit</button></div>
+            </div>
+          </div>
+
+          <!-- proxmox backup server -->
+          <div x-show="editorTab==='pbs'">
+            <label class="check"><input type="checkbox" x-model="job.pbs"> Restore PBS backups to this disk</label>
+            <p class="muted small" x-show="!job.pbs">Pull backups from a Proxmox Backup Server and restore them onto this disk during the job run.</p>
+            <template x-if="job.pbs">
+              <div>
+                <label>Server
+                  <select x-model="job.pbs_server_uuid" @change="job.pbs_server_storage=''; loadDatastores()">
+                    <option value="">— select —</option>
+                    <template x-for="s in pbs" :key="s.uuid"><option :value="s.uuid" x-text="s.name"></option></template>
+                  </select>
+                </label>
+                <label x-show="pbsDatastores.length">Datastore
+                  <select x-model="job.pbs_server_storage" @change="loadGroups()">
+                    <option value="">— select —</option>
+                    <template x-for="d in pbsDatastores" :key="d.store"><option :value="d.store" x-text="d.store"></option></template>
+                  </select>
+                </label>
+                <div x-show="pbsGroups.length" class="grouplist">
+                  <table class="table compact">
+                    <thead><tr><th></th><th>Type</th><th>ID</th><th>Last backup</th><th>Count</th></tr></thead>
+                    <tbody>
+                      <template x-for="g in pbsGroups" :key="groupId(g)">
+                        <tr>
+                          <td><input type="checkbox" :checked="job.pbs_backup_ids.includes(groupId(g))" @change="toggleGroup(groupId(g))"></td>
+                          <td x-text="g['backup-type']||g.backuptype"></td>
+                          <td x-text="g['backup-id']||g.backupid"></td>
+                          <td class="small muted" x-text="fmtEpoch(g['last-backup'])"></td>
+                          <td x-text="g['backup-count']||''"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="inline"><input placeholder="Destination folder on disk" x-model="job.pbs_dest_folder"><button type="button" class="btn btn-ghost btn-sm" @click="pickPbsDest()">Browse</button></div>
+              </div>
+            </template>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" @click="editorOpen=false">Cancel</button>
+          <button class="btn btn-primary" style="width:auto" @click="saveJob()" :disabled="busy">Save job</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ PBS EDITOR ============ -->
+    <div class="modal-backdrop" x-show="pbsEditorOpen" @click.self="pbsEditorOpen=false" x-transition.opacity>
+      <div class="modal" x-show="pbsEditorOpen" x-transition>
+        <div class="modal-head"><h2 x-text="pbsForm && pbsForm.uuid ? 'Edit PBS server' : 'Add PBS server'"></h2><button class="icon-btn" @click="pbsEditorOpen=false">✕</button></div>
+        <div class="modal-body" x-show="pbsForm">
+          <label>Name<input x-model="pbsForm.name"></label>
+          <div class="grid2">
+            <label>Host<input x-model="pbsForm.host"></label>
+            <label>Port<input type="number" x-model.number="pbsForm.port"></label>
+          </div>
+          <div class="grid2">
+            <label>Username<input x-model="pbsForm.username"></label>
+            <label>Password<input type="password" x-model="pbsForm.password" placeholder="(unchanged)"></label>
+          </div>
+          <label>Fingerprint<input x-model="pbsForm.fingerprint"></label>
+          <div class="grid2">
+            <label>Key file<div class="inline"><input x-model="pbsForm.keyfile"><button type="button" class="btn btn-ghost btn-sm" @click="pickPbsKeyfile()">Browse</button></div></label>
+            <label>Key passphrase<input type="password" x-model="pbsForm.keypass" placeholder="(unchanged)"></label>
+          </div>
+          <div class="inline"><button type="button" class="btn btn-ghost btn-sm" @click="testPbs()">Test connection</button><span class="small muted" x-text="pbsTest"></span></div>
+        </div>
+        <div class="modal-foot"><button class="btn btn-ghost" @click="pbsEditorOpen=false">Cancel</button><button class="btn btn-primary" style="width:auto" @click="savePbs()" :disabled="busy">Save</button></div>
+      </div>
+    </div>
+
+    <!-- ============ SCRIPT EDITOR ============ -->
+    <div class="modal-backdrop" x-show="scriptOpen" @click.self="scriptOpen=false" x-transition.opacity>
+      <div class="modal modal-wide" x-show="scriptOpen" x-transition>
+        <div class="modal-head"><h2>Script editor</h2><button class="icon-btn" @click="scriptOpen=false">✕</button></div>
+        <div class="modal-body">
+          <label>Script path<div class="inline"><input x-model="scriptPath"><button type="button" class="btn btn-ghost btn-sm" @click="pickScriptPath()">Browse</button></div></label>
+          <textarea class="code" rows="14" x-model="scriptContent" spellcheck="false"></textarea>
+          <div class="inline"><button type="button" class="btn btn-ghost btn-sm" @click="insertMntVar()">Insert %MNTBACKUPDIR%</button><button type="button" class="btn btn-ghost btn-sm" @click="copyMntVar()">Copy</button><span class="small muted">replaced by the mount path at runtime</span></div>
+        </div>
+        <div class="modal-foot"><button class="btn btn-ghost" @click="scriptOpen=false">Cancel</button><button class="btn btn-primary" style="width:auto" @click="saveScript()">Save script</button></div>
+      </div>
+    </div>
+
+    <!-- ============ FILE BROWSER (path picker) ============ -->
+    <div class="modal-backdrop" x-show="pickerOpen" @click.self="pickerCancel()" x-transition.opacity>
+      <div class="modal fb" x-show="pickerOpen" x-transition>
+        <div class="modal-head">
+          <h2 x-text="pickerFiles ? 'Choose a file' : 'Choose a folder'"></h2>
+          <button class="icon-btn" @click="pickerCancel()">✕</button>
+        </div>
+
+        <div class="fb-toolbar">
+          <button class="icon-btn" @click="pickerLoad(pickerParent)" :disabled="pickerPath===pickerBase" title="Up one level">↑</button>
+          <div class="fb-crumbs">
+            <template x-for="(c,i) in pickerCrumbs" :key="c.path">
+              <span class="crumb">
+                <button class="crumb-btn" @click="pickerLoad(c.path)" x-text="c.label"></button>
+                <span class="crumb-sep" x-show="i < pickerCrumbs.length-1">›</span>
+              </span>
+            </template>
+          </div>
+        </div>
+
+        <div class="fb-body">
+          <aside class="fb-sidebar">
+            <div class="fb-places-title">Places</div>
+            <template x-for="p in pickerPlaces" :key="p.path">
+              <button class="fb-place" :class="{active: pickerPath===p.path}" @click="pickerLoad(p.path)" x-text="p.label"></button>
+            </template>
+          </aside>
+
+          <div class="fb-main">
+            <div class="fb-head">
+              <button class="fb-col col-name" @click="setSort('name')">Name <span class="sort" x-show="pickerSort.key==='name'" x-text="pickerSort.dir>0?'▲':'▼'"></span></button>
+              <button class="fb-col col-size" @click="setSort('size')">Size <span class="sort" x-show="pickerSort.key==='size'" x-text="pickerSort.dir>0?'▲':'▼'"></span></button>
+              <button class="fb-col col-date" @click="setSort('mtime')">Modified <span class="sort" x-show="pickerSort.key==='mtime'" x-text="pickerSort.dir>0?'▲':'▼'"></span></button>
+            </div>
+            <ul class="fb-list">
+              <template x-for="e in pickerSorted" :key="e.name">
+                <li class="fb-row" :class="{selected: pickerSel===e.name}" @click="pickerSel=e.name" @dblclick="pickerActivate(e)">
+                  <span class="col-name"><span class="fb-icon" x-html="e.isDir ? folderIcon : fileIcon"></span><span class="fb-name" x-text="e.name"></span></span>
+                  <span class="col-size" x-text="e.isDir ? '' : humanSize(e.size)"></span>
+                  <span class="col-date" x-text="fmtMtime(e.mtime)"></span>
+                </li>
+              </template>
+              <li class="fb-empty" x-show="pickerSorted.length===0">This folder is empty</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="fb-foot">
+          <input class="fb-path mono" x-model="pickerPath" @keydown.enter="pickerLoad(pickerPath)" spellcheck="false">
+          <div class="fb-actions">
+            <button class="btn btn-ghost" @click="pickerCancel()">Cancel</button>
+            <button class="btn btn-primary" style="width:auto" @click="pickerPrimary()" :disabled="pickerPrimaryDisabled" x-text="pickerFiles ? 'Open' : 'Select folder'"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ RUN LOG ============ -->
+    <div class="modal-backdrop" x-show="runOpen" @click.self="runOpen=false" x-transition.opacity>
+      <div class="modal modal-wide" x-show="runOpen" x-transition>
+        <div class="modal-head"><h2>Run log</h2><button class="icon-btn" @click="runOpen=false">✕</button></div>
+        <pre class="logbox modal-log" x-text="runText"></pre>
+      </div>
+    </div>
+
+    <!-- ============ ABOUT ============ -->
+    <div class="modal-backdrop" x-show="aboutOpen" @click.self="aboutOpen=false" x-transition.opacity>
+      <div class="modal" x-show="aboutOpen" x-transition>
+        <div class="modal-head"><h2>About tiBackup</h2><button class="icon-btn" @click="aboutOpen=false">✕</button></div>
+        <div class="modal-body about">
+          <img src="img/tibackup.png" alt="" class="about-logo">
+          <h1>tiBackup <span class="muted" x-text="'v'+(health.version||'')"></span></h1>
+          <p class="muted">An intelligent, disk-based backup system for Linux.</p>
+          <p>Developer: <strong>Rene Hadler</strong></p>
+          <p class="small">
+            <a href="mailto:rene@hadler.me">rene@hadler.me</a><br>
+            <a href="https://hadler.me" target="_blank" rel="noopener">https://hadler.me</a>
+          </p>
+          <p class="small muted">Licensed under the GNU GPL v3.0 or later.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ TOASTS ============ -->
+    <div class="toasts">
+      <template x-for="t in toasts" :key="t.id">
+        <div class="toast" :class="t.kind" x-text="t.msg"></div>
+      </template>
+    </div>
+
+  </div>
+  </template>
+
+</body>
+</html>

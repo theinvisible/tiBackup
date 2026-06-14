@@ -2,11 +2,11 @@ Source: tibackup
 Section: admin
 Priority: optional
 Maintainer: Rene Hadler <rene@iksdeh.at>
-Build-Depends: debhelper (>= 8.0.0), cmake, qt6-base-dev
+Build-Depends: debhelper (>= 8.0.0), cmake, qt6-base-dev, qt6-httpserver-dev, qt6-websockets-dev
 
 Package: tibackup
 Architecture: amd64
-Depends: ${shlibs:Depends}, tibackuplib (>= 0.8.0)
+Depends: ${shlibs:Depends}, tibackuplib (>= 0.8.0), libqt6httpserver6, libqt6websockets6
 Conflicts:
 Replaces:
 Provides: tibackup

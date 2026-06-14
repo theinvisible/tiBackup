@@ -3,9 +3,6 @@ set -e
 
 case "$1" in
 configure)
-	if ! getent group tibackup >/dev/null; then
-		addgroup --system tibackup
-	fi
 	systemctl is-active --quiet tibackupd && systemctl restart tibackupd
 	;;
 abort-upgrade|abort-remove|abort-deconfigure)

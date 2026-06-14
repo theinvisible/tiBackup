@@ -21,34 +21,31 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 */
 
-#ifndef DISKOBSERVER_H
-#define DISKOBSERVER_H
+#ifndef JSONMAP_H
+#define JSONMAP_H
 
-#include <QObject>
+#include <QJsonObject>
 
-#include "tibackuplib.h"
-#include "backupmanager.h"
+class tiBackupJob;
+class PBServer;
+class DeviceDisk;
+class DeviceDiskPartition;
 
-class DiskMain : public QObject
-{
-    Q_OBJECT
-public:
-    explicit DiskMain(QObject *parent = 0);
+// Maps the lib data objects to/from JSON. Field names and the int<->enum casts
+// mirror ticonf.cpp exactly, so the web layer persists identical .conf files.
+namespace jsonmap {
 
-    // The web layer drives manual backups and live status from the SAME manager
-    // instance that the scheduler/hotplug paths use.
-    backupManager* getManager() const { return manager; }
+QJsonObject jobToJson(const tiBackupJob &job);
+tiBackupJob jobFromJson(const QJsonObject &o);
 
-signals:
+// Secrets (password/keypass) are only serialized when includeSecrets is true,
+// which is never the case for GET responses.
+QJsonObject pbServerToJson(const PBServer &srv, bool includeSecrets = false);
+PBServer    pbServerFromJson(const QJsonObject &o);
 
-public slots:
-    void onDiskRemoved(DeviceDisk *disk);
-    void onDiskAdded(DeviceDisk *disk);
-    void onTaskCheck();
+QJsonObject partitionToJson(const DeviceDiskPartition &p);
+QJsonObject diskToJson(const DeviceDisk &d);
 
-private:
-    backupManager *manager;
+} // namespace jsonmap
 
-};
-
-#endif // DISKOBSERVER_H
+#endif // JSONMAP_H
