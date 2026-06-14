@@ -48,8 +48,8 @@ Pre-built packages are published via Cloudsmith for **Debian 13 (trixie)**,
 distribution:
 
 ```bash
-curl -1sLf 'https://dl.cloudsmith.io/public/theinvisible/tibackup/setup.deb.sh' | sudo -E bash
-sudo apt install tibackup            # add tibackupui for the graphical client
+curl -1sLf 'https://dl.cloudsmith.io/public/ti-9x5p/tibackup/setup.deb.sh' | sudo -E bash
+sudo apt install tibackup
 ```
 
 This installs the `tibackupd` systemd service. Enable and start it:
