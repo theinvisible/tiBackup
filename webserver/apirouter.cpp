@@ -26,7 +26,9 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QHttpServer>
 #include <QHttpServerRequest>
 #include <QHttpServerResponse>
-#include <QHttpHeaders>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+#include <QHttpHeaders>   // added in Qt 6.7; older distros (e.g. Ubuntu 24.04 / Qt 6.4) lack it
+#endif
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>

@@ -69,6 +69,29 @@ QByteArray contentTypeFor(const QString &path)
     return "application/octet-stream";
 }
 
+// QHttpServerResponder gained sendResponse() in Qt 6.5; Qt 6.4 (e.g. Ubuntu
+// 24.04) only has the older write() overloads. These helpers paper over that so
+// serveStatic() builds across all supported distros.
+void sendBody(QHttpServerResponder &responder, const QByteArray &mimeType,
+              const QByteArray &body,
+              QHttpServerResponse::StatusCode status = QHttpServerResponse::StatusCode::Ok)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    responder.sendResponse(QHttpServerResponse(mimeType, body, status));
+#else
+    responder.write(body, mimeType, status);
+#endif
+}
+
+void sendStatus(QHttpServerResponder &responder, QHttpServerResponse::StatusCode status)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    responder.sendResponse(QHttpServerResponse(status));
+#else
+    responder.write(status);
+#endif
+}
+
 } // namespace
 
 WebServer::WebServer(backupManager *manager, QObject *parent)
@@ -219,8 +242,8 @@ void WebServer::serveStatic(const QHttpServerRequest &request, QHttpServerRespon
     // Unmatched /api/* must never fall through to a file; answer JSON 404.
     if(path.startsWith(QLatin1String("/api/")))
     {
-        responder.sendResponse(QHttpServerResponse(QByteArray("application/json"),
-            QByteArray("{\"error\":\"not found\"}"), QHttpServerResponse::StatusCode::NotFound));
+        sendBody(responder, QByteArray("application/json"),
+            QByteArray("{\"error\":\"not found\"}"), QHttpServerResponse::StatusCode::NotFound);
         return;
     }
 
@@ -240,16 +263,16 @@ void WebServer::serveStatic(const QHttpServerRequest &request, QHttpServerRespon
        !(canonicalFull == canonicalDoc || canonicalFull.startsWith(canonicalDoc + QLatin1Char('/'))) ||
        !fi.isFile())
     {
-        responder.sendResponse(QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound));
+        sendStatus(responder, QHttpServerResponse::StatusCode::NotFound);
         return;
     }
 
     QFile f(canonicalFull);
     if(!f.open(QIODevice::ReadOnly))
     {
-        responder.sendResponse(QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound));
+        sendStatus(responder, QHttpServerResponse::StatusCode::NotFound);
         return;
     }
 
-    responder.sendResponse(QHttpServerResponse(contentTypeFor(canonicalFull), f.readAll()));
+    sendBody(responder, contentTypeFor(canonicalFull), f.readAll());
 }
