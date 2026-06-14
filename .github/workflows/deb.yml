@@ -1,9 +1,19 @@
 name: deb
 
-# Build the tiBackup Debian package on dev (master) pushes and release tags.
-# tiBackupLib is built+installed as a .deb from the matching source ref first, so
-# the consumer .deb links and resolves its dependency against a real package
-# (find_package + dh_shlibdeps work). No external package repository is required.
+# Build the tiBackup Debian package for every supported distribution and publish
+# release tags to Cloudsmith.
+#
+#   * Pushes to master and version tags build the package once per target distro
+#     (Debian 13, Ubuntu 24.04, Ubuntu 26.04) inside the matching container, so
+#     dh_shlibdeps pins distro-correct dependency versions and the Qt6/libc ABI
+#     matches the target. tiBackupLib is built+installed as a .deb from the
+#     matching source ref first, so find_package + dh_shlibdeps resolve against a
+#     real package. Every build uploads the .deb as a workflow artifact.
+#   * Only version tags (v*) are published to the Cloudsmith apt repository, filed
+#     under <distro>/<codename> (auto-detected from /etc/os-release), and attached
+#     to the GitHub Release. Master builds stay as downloadable artifacts only.
+#
+# Requires the repository secret CLOUDSMITH_API_KEY for the publish step.
 
 on:
   push:
@@ -14,11 +24,37 @@ on:
 env:
   # Same-named ref/tag of tiBackupLib (lockstep releases).
   TIBACKUPLIB_REF: ${{ github.ref_name }}
+  CLOUDSMITH_REPO: theinvisible/tibackup
 
 jobs:
   debian-package:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - debian:13
+          - ubuntu:24.04
+          - ubuntu:26.04
+    container:
+      image: ${{ matrix.image }}
     steps:
+      - name: Bootstrap container & install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates git \
+            build-essential fakeroot devscripts debhelper cmake \
+            qt6-base-dev qt6-base-dev-tools \
+            libpoco-dev libudev-dev libblkid-dev uuid-dev \
+            rsync cryptsetup
+
+      - name: Detect distribution
+        run: |
+          . /etc/os-release
+          echo "DISTRO_ID=${ID}" >> "$GITHUB_ENV"
+          echo "CODENAME=${VERSION_CODENAME}" >> "$GITHUB_ENV"
+
       - name: Checkout tiBackup
         uses: actions/checkout@v4
 
@@ -29,20 +65,11 @@ jobs:
           ref: ${{ env.TIBACKUPLIB_REF }}
           path: _deps/tiBackupLib
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential devscripts debhelper cmake \
-            qt6-base-dev qt6-base-dev-tools \
-            libpoco-dev libudev-dev libblkid-dev uuid-dev \
-            rsync cryptsetup
-
       - name: Build & install tiBackupLib Debian packages
         run: |
           ( cd _deps/tiBackupLib/tibackuplib-dev && echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=$(nproc)" -us -uc )
           ( cd _deps/tiBackupLib && echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=$(nproc)" -us -uc )
-          sudo apt-get install -y ./_deps/tiBackupLib/tibackuplib-dev_*.deb ./_deps/tibackuplib_*.deb
+          apt-get install -y ./_deps/tiBackupLib/tibackuplib-dev_*.deb ./_deps/tibackuplib_*.deb
           # keep the consumer source tree clean for its own debuild
           rm -rf _deps
 
@@ -51,13 +78,26 @@ jobs:
           mkdir -p artifacts
           echo "y" | debuild -eDEB_BUILD_OPTIONS="parallel=$(nproc)" -us -uc
           mv ../tibackup_*.deb artifacts/
+          # disambiguate filenames per distro (same version lives in several dists)
+          ( cd artifacts && for f in *.deb; do arch="${f##*_}"; rest="${f%_*}"; mv "$f" "${rest}_${CODENAME}_${arch}"; done )
           ls -l artifacts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tibackup-deb
+          name: tibackup-deb-${{ env.CODENAME }}
           path: artifacts/*.deb
+
+      - name: Publish to Cloudsmith
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          apt-get install -y --no-install-recommends python3-pip
+          pip3 install --break-system-packages --upgrade cloudsmith-cli
+          for deb in artifacts/*.deb; do
+            cloudsmith push deb "${CLOUDSMITH_REPO}/${DISTRO_ID}/${CODENAME}" "$deb"
+          done
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')

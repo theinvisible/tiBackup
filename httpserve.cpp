@@ -74,5 +74,14 @@ httpserve::httpserve(QObject *parent)
     QSettings* listenerSettings=new QSettings(configFileName,QSettings::IniFormat,parent);
     listenerSettings->beginGroup("listener");
 
-    new HttpListener(listenerSettings,new httprequestmapper(parent),parent);
+    HttpListener* listener=new HttpListener(listenerSettings,new httprequestmapper(parent),parent);
+
+    // Report the actual bound address/port at startup
+    QString host=listenerSettings->value("host").toString();
+    if(host.isEmpty())
+        host=QStringLiteral("0.0.0.0");
+    if(listener->isListening())
+        qInfo("tiBackup HTTP status server listening on %s:%d", qPrintable(host), listener->serverPort());
+    else
+        qWarning("tiBackup HTTP status server failed to start on port %s", qPrintable(listenerSettings->value("port").toString()));
 }

@@ -43,7 +43,9 @@ backups over the IPC socket — so you never need to run the GUI as root.
 
 ## Installation
 
-Pre-built Debian/Ubuntu packages are published via Cloudsmith:
+Pre-built packages are published via Cloudsmith for **Debian 13 (trixie)**,
+**Ubuntu 24.04 (noble)** and **Ubuntu 26.04**. The setup script auto-detects your
+distribution:
 
 ```bash
 curl -1sLf 'https://dl.cloudsmith.io/public/theinvisible/tibackup/setup.deb.sh' | sudo -E bash
