@@ -24,7 +24,7 @@ on:
 env:
   # Same-named ref/tag of tiBackupLib (lockstep releases).
   TIBACKUPLIB_REF: ${{ github.ref_name }}
-  CLOUDSMITH_REPO: theinvisible/tibackup
+  CLOUDSMITH_REPO: ti-9x5p/tibackup
 
 jobs:
   debian-package:
