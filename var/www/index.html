@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>tiBackup</title>
   <link rel="icon" href="img/tibackup.png">
+  <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/open-props.min.css">
   <link rel="stylesheet" href="css/app.css">
   <script src="js/api.js" defer></script>
@@ -189,7 +190,7 @@
               <button class="btn btn-ghost btn-sm" @click="loadLogs()">Refresh</button>
             </div>
           </div>
-          <pre class="logbox" x-ref="logbox" x-text="visibleLog"></pre>
+          <pre class="logbox" x-ref="logbox" x-html="visibleLogHtml"></pre>
         </div>
       </section>
     </main>

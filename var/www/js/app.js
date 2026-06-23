@@ -376,6 +376,17 @@ function app() {
         .map((l) => l.text)
         .join("\n");
     },
+    // Same as visibleLog, but the [LEVEL] token is wrapped in a coloured span.
+    // The whole line is HTML-escaped first, so log text can never inject markup.
+    get visibleLogHtml() {
+      const min = LOG_LEVELS[this.logLevel] ?? 1;
+      const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return this.logLines
+        .filter((l) => (LOG_LEVELS[l.level] ?? 1) >= min)
+        .map((l) => esc(l.text).replace(/\[(DEBUG|INFO|WARN|ERROR|CRIT)\]/,
+          (m, lv) => `<span class="lvl lvl-${lv.toLowerCase()}">${m}</span>`))
+        .join("\n");
+    },
     // Run logs grouped by job name; newest run first within each group.
     get runGroups() {
       const m = {};
