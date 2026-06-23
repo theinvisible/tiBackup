@@ -93,11 +93,6 @@
             </tbody>
           </table>
         </div>
-
-        <div class="card">
-          <div class="card-head"><h2>Daemon log</h2></div>
-          <pre class="logbox" x-ref="logbox" x-text="logText"></pre>
-        </div>
       </section>
 
       <!-- PBS ---------------------------------------------------------- -->
@@ -153,18 +148,48 @@
 
       <!-- LOGS --------------------------------------------------------- -->
       <section x-show="page==='logs'">
+
+        <!-- Backup run logs, grouped by job -->
         <div class="card">
           <div class="card-head"><h2>Backup run logs</h2><button class="btn btn-ghost btn-sm" @click="loadLogs()">Refresh</button></div>
-          <table class="table">
-            <thead><tr><th>Date</th><th>Job</th><th></th></tr></thead>
-            <tbody>
-              <template x-for="r in runs" :key="r.file">
-                <tr><td class="mono small" x-text="r.date"></td><td x-text="r.name"></td>
-                  <td class="right"><button class="btn btn-ghost btn-sm" @click="openRun(r.file)">View</button></td></tr>
-              </template>
-              <tr x-show="runs.length===0"><td colspan="3" class="muted center">No run logs yet.</td></tr>
-            </tbody>
-          </table>
+          <template x-for="g in runGroups" :key="g.name">
+            <div class="log-group">
+              <button type="button" class="log-group-head" @click="toggleGroup(g.name)">
+                <span class="caret" x-text="openGroups[g.name] ? '▾' : '▸'"></span>
+                <span class="log-group-name" x-text="g.name || '(unnamed)'"></span>
+                <span class="count-chip" x-text="g.runs.length"></span>
+              </button>
+              <table class="table" x-show="openGroups[g.name]" x-transition>
+                <thead><tr><th>Date</th><th></th></tr></thead>
+                <tbody>
+                  <template x-for="r in g.runs" :key="r.file">
+                    <tr><td class="mono small" x-text="r.date"></td>
+                      <td class="right"><button class="btn btn-ghost btn-sm" @click="openRun(r.file)">View</button></td></tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </template>
+          <p x-show="runGroups.length===0" class="muted center">No run logs yet.</p>
+        </div>
+
+        <!-- Daemon log with level filter (DEBUG hidden by default) -->
+        <div class="card">
+          <div class="card-head">
+            <h2>Daemon log</h2>
+            <div class="inline">
+              <label class="muted small">Level</label>
+              <select x-model="logLevel" class="level-select">
+                <option value="crit">Critical</option>
+                <option value="error">Error+</option>
+                <option value="warn">Warning+</option>
+                <option value="info">Info+</option>
+                <option value="debug">All (incl. debug)</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" @click="loadLogs()">Refresh</button>
+            </div>
+          </div>
+          <pre class="logbox" x-ref="logbox" x-text="visibleLog"></pre>
         </div>
       </section>
     </main>

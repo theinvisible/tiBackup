@@ -20,6 +20,14 @@ function blankPbs() {
   return { uuid: "", name: "", host: "", port: 8007, username: "", password: "", fingerprint: "", keyfile: "", keypass: "" };
 }
 
+// Daemon-log levels, ordered by severity. The daemon writes "[LEVEL]" into every
+// line (see logging.cpp); the Log tab filters by it, hiding DEBUG by default.
+const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3, crit: 4 };
+function logLevelOf(line) {
+  const m = String(line).match(/\[(DEBUG|INFO|WARN|ERROR|CRIT)\]/);
+  return m ? m[1].toLowerCase() : "info";   // untagged lines stay visible
+}
+
 function app() {
   return {
     // ---- view state -------------------------------------------------------
@@ -36,8 +44,10 @@ function app() {
     setupPw: "", setupPw2: "", setupErr: "",
 
     // dashboard data
-    health: {}, jobs: [], logText: "",
+    health: {}, jobs: [],
+    // logs tab: daemon log (level-filtered) + run logs grouped by job
     runs: [], runText: "", runOpen: false,
+    logLines: [], logLevel: "info", openGroups: {},
     pollTimer: null,
 
     // devices (loaded for the job editor)
@@ -148,8 +158,8 @@ function app() {
         const j = this.jobs.find((x) => x.name === msg.name);
         if (j) j.status = msg.status;
       } else if (msg.type === "logTail") {
-        this.logText = (this.logText + "\n" + msg.line).split("\n").slice(-400).join("\n");
-        this.scrollLog();
+        this.pushLog(msg.line);
+        if (this.page === "logs") this.scrollLog();
       }
     },
     startPoll() {
@@ -162,10 +172,10 @@ function app() {
     // ---- dashboard --------------------------------------------------------
     async loadDashboard(silent) {
       try {
-        const [h, j, l] = await Promise.all([
-          api.get("/api/health"), api.get("/api/jobs"), api.get("/api/logs/main?lines=200"),
+        const [h, j] = await Promise.all([
+          api.get("/api/health"), api.get("/api/jobs"),
         ]);
-        this.health = h; this.jobs = j; this.logText = l.text; this.scrollLog();
+        this.health = h; this.jobs = j;
       } catch (e) { if (!silent) console.error(e); }
     },
     scrollLog() {
@@ -194,14 +204,25 @@ function app() {
     },
     async editJob(name) {
       try {
-        this.job = await api.get("/api/jobs/" + encodeURIComponent(name));
-        if (!this.job.backupdirs) this.job.backupdirs = [];
+        const job = await api.get("/api/jobs/" + encodeURIComponent(name));
+        if (!job.backupdirs) job.backupdirs = [];
+        const wantUuid = job.partition_uuid;
         this.editorNew = false; this.editorTab = "general"; this.editorOrigName = name;
         this.editorMountDir = ""; this.partInfo = null; this.resetFolderForm();
-        this.editorOpen = true;
+        // Devices must be loaded before binding the partition: the partition
+        // <select> only shows the stored UUID if its <option> already exists.
         await Promise.all([this.loadDevices(), this.loadPbs()]);
-        const d = this.devices.find((x) => x.partitions.some((p) => p.uuid === this.job.partition_uuid));
+        const d = this.devices.find((x) => x.partitions.some((p) => p.uuid === wantUuid));
+        // Bind the job with the partition cleared and set the device first so its
+        // <option>s render; then (next tick, once they exist) apply the UUID so
+        // x-model can select it. Without this two-step, a cold first-open binds the
+        // value before the options exist and the select stays blank until reopened.
+        job.partition_uuid = "";
+        this.job = job;
         this.editorDevname = d ? d.devname : "";
+        this.editorOpen = true;
+        await this.$nextTick();
+        this.job.partition_uuid = wantUuid;
         this.refreshPartInfo();
       } catch (e) { this.toast("Could not load job: " + e.message, "error"); }
     },
@@ -329,7 +350,42 @@ function app() {
     },
 
     // ---- logs -------------------------------------------------------------
-    async loadLogs() { try { this.runs = await api.get("/api/logs/runs"); } catch (e) { console.error(e); } },
+    async loadLogs() {
+      try {
+        const [runs, main] = await Promise.all([
+          api.get("/api/logs/runs"), api.get("/api/logs/main?lines=200"),
+        ]);
+        this.runs = runs;
+        this.logLines = [];
+        this.pushLog(main.text);
+        this.scrollLog();
+      } catch (e) { console.error(e); }
+    },
+    pushLog(text) {
+      for (const line of String(text).split("\n")) {
+        if (!line.trim()) continue;
+        this.logLines.push({ level: logLevelOf(line), text: line });
+      }
+      if (this.logLines.length > 1000) this.logLines.splice(0, this.logLines.length - 1000);
+    },
+    // Daemon log filtered to the selected minimum level (DEBUG hidden unless chosen).
+    get visibleLog() {
+      const min = LOG_LEVELS[this.logLevel] ?? 1;
+      return this.logLines
+        .filter((l) => (LOG_LEVELS[l.level] ?? 1) >= min)
+        .map((l) => l.text)
+        .join("\n");
+    },
+    // Run logs grouped by job name; newest run first within each group.
+    get runGroups() {
+      const m = {};
+      for (const r of this.runs) (m[r.name] || (m[r.name] = [])).push(r);
+      return Object.keys(m).sort().map((name) => ({
+        name,
+        runs: m[name].slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+      }));
+    },
+    toggleGroup(name) { this.openGroups[name] = !this.openGroups[name]; },
     async openRun(file) {
       try { const r = await api.get("/api/logs/runs/" + encodeURIComponent(file)); this.runText = r.text; this.runOpen = true; }
       catch (e) { console.error(e); }

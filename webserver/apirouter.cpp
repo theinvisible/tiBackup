@@ -42,6 +42,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 #include "config.h"
 #include "ticonf.h"
+#include "logging.h"
 #include "tibackuplib.h"
 #include "backupmanager.h"
 #include "pbsclient.h"
@@ -562,7 +563,11 @@ void ApiRouter::registerWriteRoutes()
         const QJsonObject b = parseBody(req);
         tiConfMain cfg;
         if(b.contains("debug"))
-            cfg.setValue("main/debug", b["debug"].toBool());
+        {
+            const bool dbg = b["debug"].toBool();
+            cfg.setValue("main/debug", dbg);
+            tibackup::setDebugLogging(dbg);   // take effect without a daemon restart
+        }
         if(b.contains("paths"))
         {
             const QJsonObject p = b["paths"].toObject();

@@ -16,6 +16,8 @@ qt_standard_project_setup()
 
 qt_add_executable(tiBackup
     main.cpp
+    logging.cpp
+    logging.h
     diskmain.cpp
     diskmain.h
     diskwatcher.cpp

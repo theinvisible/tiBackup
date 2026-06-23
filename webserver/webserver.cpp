@@ -40,6 +40,8 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QJsonObject>
 #include <QJsonDocument>
 
+#include <iostream>
+
 #include "config.h"
 #include "ticonf.h"
 #include "backupmanager.h"
@@ -146,9 +148,19 @@ WebServer::WebServer(backupManager *manager, QObject *parent)
 
         qInfo("tiBackup web UI listening on %s://%s:%u (docroot %s)",
               tls ? "https" : "http", qPrintable(bindAddr), port, qPrintable(m_docroot));
+
+        // The Qt message handler routes qInfo() into the log file, so also echo
+        // the listening address to the console for an at-a-glance startup status.
+        std::cout << "tiBackup web UI listening on "
+                  << (tls ? "https" : "http") << "://"
+                  << bindAddr.toStdString() << ":" << port << std::endl;
     }
     else
+    {
         qWarning("tiBackup web UI failed to bind %s:%u", qPrintable(bindAddr), port);
+        std::cerr << "tiBackup web UI failed to bind "
+                  << bindAddr.toStdString() << ":" << port << std::endl;
+    }
 }
 
 WebServer::~WebServer() = default;

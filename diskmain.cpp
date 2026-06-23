@@ -64,12 +64,12 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
 
 void DiskMain::onDiskRemoved(DeviceDisk *disk)
 {
-    qDebug() << "DiskMain::onDiskRemoved()" << disk->name;
+    qInfo() << "Disk removed:" << disk->name;
 }
 
 void DiskMain::onDiskAdded(DeviceDisk *disk)
 {
-    qDebug() << "DiskMain::onDiskAdded() -> " << disk->name;
+    qInfo() << "Disk added:" << disk->name;
 
     disk->readPartitions();
     qDebug() << "DiskMain::onDiskAdded() -> diskpartcount::" << disk->partitions.count();
@@ -88,6 +88,7 @@ void DiskMain::onDiskAdded(DeviceDisk *disk)
             if(job->start_backup_on_hotplug == false)
                 continue;
 
+            qInfo() << "Starting backup on hotplug:" << job->name;
             manager->startBackup(job->name);
         }
     }
@@ -117,7 +118,7 @@ void DiskMain::onTaskCheck()
             qDebug() << "daily::curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job->intervalTime;
             if(curDate.toString("hh:mm") == job->intervalTime)
             {
-                qDebug() << "we start task for backup id " << job->name;
+                qInfo() << "Starting scheduled backup:" << job->name;
                 manager->startBackup(job->name);
             }
             break;
@@ -127,7 +128,7 @@ void DiskMain::onTaskCheck()
             qDebug() << "weekly::curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job->intervalTime;
             if(curDate.toString("hh:mm") == job->intervalTime && (curDate.date().dayOfWeek()-1) == job->intervalDay)
             {
-                qDebug() << "we start task for backup id " << job->name;
+                qInfo() << "Starting scheduled backup:" << job->name;
                 manager->startBackup(job->name);
             }
             break;
@@ -137,7 +138,7 @@ void DiskMain::onTaskCheck()
             qDebug() << "monthly::curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job->intervalTime;
             if(curDate.toString("hh:mm") == job->intervalTime && curDate.date().day() == job->intervalDay)
             {
-                qDebug() << "we start task for backup id " << job->name;
+                qInfo() << "Starting scheduled backup:" << job->name;
                 manager->startBackup(job->name);
             }
             break;

@@ -215,6 +215,23 @@ input:focus, select:focus, textarea:focus {
   white-space: pre-wrap; word-break: break-word; color: var(--gray-4);
 }
 
+/* --- log tab: run-log groups + level filter ------------------------------- */
+.log-group { border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }
+.log-group:last-child { border-bottom: 0; }
+.log-group-head {
+  display: flex; align-items: center; gap: var(--size-2); width: 100%;
+  padding: var(--size-2) 0; background: none; border: 0; cursor: pointer;
+  color: var(--text); font: inherit; text-align: left;
+}
+.log-group-head .caret { width: 1rem; color: var(--muted); }
+.log-group-name { font-weight: 600; }
+.count-chip {
+  margin-left: auto; padding: .1rem .5rem; border-radius: var(--radius-round);
+  font-size: .75rem; color: var(--muted);
+  background: color-mix(in oklab, var(--idle) 22%, transparent);
+}
+.level-select { width: auto; padding: .25rem .5rem; }
+
 /* --- modal ---------------------------------------------------------------- */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 50;

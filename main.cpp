@@ -22,55 +22,13 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 */
 
 #include <QCoreApplication>
-#include <QFile>
-#include <QTextStream>
-#include <QDateTime>
 #include <QStringList>
 
 #include <ticonf.h>
 #include <diskmain.h>
+#include "logging.h"
 #include "webserver/webserver.h"
 #include "webserver/auth/passwordhash.h"
-
-QFile *tibackupLog = 0;
-
-void logMessageOutput(QtMsgType type, const QMessageLogContext &, const QString & str)
-{
-    tiConfMain main_settings;
-
-    if(tibackupLog == 0)
-    {
-        tibackupLog = new QFile(QString("%1/tibackup.log").arg(main_settings.getValue("paths/logs").toString()));
-        tibackupLog->open(QIODevice::Append | QIODevice::Text);
-    }
-
-    bool tidebug = main_settings.getValue("main/debug").toBool();
-
-    QTextStream out(tibackupLog);
-    QDateTime currentDate = QDateTime::currentDateTime();
-
-    switch (type) {
-    case QtDebugMsg:
-        if(tidebug == true)
-            out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackup::Debug: " << str << "\n";
-        break;
-    case QtInfoMsg:
-        out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackup::Info: " << str << "\n";
-        break;
-    case QtWarningMsg:
-        out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackup::Warning: " << str << "\n";
-        break;
-    case QtCriticalMsg:
-        out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackup::Critical: " << str << "\n";
-        break;
-    case QtFatalMsg:
-        out << currentDate.toString("MMM d hh:mm:ss").toStdString().c_str() << " tiBackup::Fatal: " << str << "\n";
-        tibackupLog->flush();
-        abort();
-    }
-
-    tibackupLog->flush();
-}
 
 // Headless provisioning of the web admin password: `tiBackup --set-web-password`
 // (run as root). Reads the new password from stdin and stores a salted hash in
@@ -102,7 +60,13 @@ static int setWebPassword()
 
 int main(int argc, char *argv[])
 {
-    qInstallMessageHandler(logMessageOutput);
+    // Seed the debug gate from config before installing the handler so early
+    // messages already honour it; the web UI updates it live afterwards.
+    {
+        tiConfMain cfg;
+        tibackup::setDebugLogging(cfg.getValue("main/debug").toBool());
+    }
+    qInstallMessageHandler(tibackup::logMessageOutput);
 
     qRegisterMetaType<DeviceDiskPartition>("DeviceDiskPartition");
 
