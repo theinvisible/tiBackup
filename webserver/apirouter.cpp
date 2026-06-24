@@ -271,7 +271,15 @@ void ApiRouter::registerAuthRoutes()
         tiConfMain cfg;
         QJsonObject o;
         o["setupRequired"] = cfg.getValue("web/passhash").toString().isEmpty();
-        o["authenticated"] = isAuthed(req);
+        const bool authed = isAuthed(req);
+        o["authenticated"] = authed;
+        // Hand the session's CSRF token back to an already-authenticated caller so
+        // a page reload - which clears the in-memory token but keeps the session
+        // cookie - can keep performing writes instead of 403-ing until re-login.
+        // Only disclosed to a request that already carries the valid (HttpOnly,
+        // SameSite=Strict) session cookie, so CSRF protection is not weakened.
+        if(authed)
+            o["csrf"] = m_sessions->csrfFor(sessionToken(req));
         return jsonResp(o);
     });
 

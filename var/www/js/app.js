@@ -86,7 +86,7 @@ function app() {
       try {
         const s = await api.get("/api/auth/status");
         if (s.setupRequired) this.view = "setup";
-        else if (s.authenticated) await this.enterApp();
+        else if (s.authenticated) { api.csrf = s.csrf; await this.enterApp(); }
         else this.view = "login";
       } catch (e) { this.view = "login"; }
     },
@@ -335,7 +335,7 @@ function app() {
       catch (e) { this.toast("PBS: " + e.message, "error"); }
     },
     groupId(g) { return (g["backup-type"] || g.backuptype || "") + "/" + (g["backup-id"] || g.backupid || ""); },
-    toggleGroup(id) {
+    togglePbsGroup(id) {
       const i = this.job.pbs_backup_ids.indexOf(id);
       if (i >= 0) this.job.pbs_backup_ids.splice(i, 1); else this.job.pbs_backup_ids.push(id);
     },

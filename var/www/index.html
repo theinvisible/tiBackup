@@ -368,7 +368,7 @@
                     <tbody>
                       <template x-for="g in pbsGroups" :key="groupId(g)">
                         <tr>
-                          <td><input type="checkbox" :checked="job.pbs_backup_ids.includes(groupId(g))" @change="toggleGroup(groupId(g))"></td>
+                          <td><input type="checkbox" :checked="job.pbs_backup_ids.includes(groupId(g))" @change="togglePbsGroup(groupId(g))"></td>
                           <td x-text="g['backup-type']||g.backuptype"></td>
                           <td x-text="g['backup-id']||g.backupid"></td>
                           <td class="small muted" x-text="fmtEpoch(g['last-backup'])"></td>

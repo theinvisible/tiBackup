@@ -31,6 +31,11 @@ export TIBACKUP_CONF="$CONF_DIR/main.conf"
 export TIBACKUP_WEB_PORT="8899"
 export TIBACKUP_WEB_DOCROOT="$REPO/var/www"
 
+# If a locally-extracted proxmox-backup-client shim exists (PBS restore E2E),
+# put it on the daemon's PATH so it can exec `proxmox-backup-client` by bare name
+# without a system-wide install. Harmless when the dir is absent.
+[ -d /tmp/tib-e2e-pbsclient/bin ] && export PATH="/tmp/tib-e2e-pbsclient/bin:$PATH"
+
 # Unmount only leftovers under /mnt that point at the test USB stick (/dev/sda*).
 # Scoped on purpose: never touches mounts outside /mnt or off other devices.
 umount_test_leftovers() {
@@ -82,5 +87,8 @@ case "${1:-}" in
     verify)  verify ;;
     logs)    echo "--- daemon.log (stdout/stderr) ---"; cat "$LOG" 2>/dev/null || true
              echo "--- tibackup.log (internal) ---";    cat "$CONF_DIR/logs/tibackup.log" 2>/dev/null || true ;;
+    detaillog) d="$CONF_DIR/logs/backup_detail"; f="$(ls -t "$d" 2>/dev/null | head -1)"
+             echo "--- newest backup_detail: $f ---"; cat "$d/$f" 2>/dev/null || true ;;
+    jobconf) for f in "$CONF_DIR"/jobs/*.conf; do echo "--- $f ---"; cat "$f" 2>/dev/null; done ;;
     *)       echo "usage: $0 {start|stop|restart|status|logs}" >&2; exit 2 ;;
 esac
