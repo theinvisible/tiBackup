@@ -775,10 +775,16 @@ void ApiRouter::registerWriteRoutes()
         const QJsonObject b = parseBody(req);
         QString host, user, pass;
         int port = 8007;
-        if(b.contains("uuid"))
+        // Test an existing, saved server by uuid; otherwise test the inline
+        // host/user/pass from the form. The "Add server" form always carries a
+        // uuid key (empty string for a not-yet-saved server), so check that the
+        // uuid is non-empty rather than merely present - an empty uuid means
+        // "new server, use the inline fields", not "look up server ''".
+        const QString uuid = b.value("uuid").toString();
+        if(!uuid.isEmpty())
         {
             tiConfPBServers::instance()->readItems();
-            PBServer *s = tiConfPBServers::instance()->getItemByUuid(b["uuid"].toString());
+            PBServer *s = tiConfPBServers::instance()->getItemByUuid(uuid);
             if(!s) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
             host = s->host; port = s->port; user = s->username; pass = s->password;
         }
