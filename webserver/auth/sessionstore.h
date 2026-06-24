@@ -49,16 +49,30 @@ public:
 
     void drop(const QString &token);
 
+    // --- login throttling (brute-force mitigation) ---------------------------
+    // Call before verifying credentials; returns false while `clientId` (the
+    // remote IP) is locked out after too many recent failures.
+    bool loginAllowed(const QString &clientId);
+    // Record the outcome of a credential check so the lockout window can advance.
+    void loginFailed(const QString &clientId);
+    void loginSucceeded(const QString &clientId);
+
 private:
     struct Session {
         QString csrf;
         qint64  lastSeen;   // epoch seconds
     };
 
+    struct LoginGate {
+        int    fails = 0;
+        qint64 lockedUntil = 0;   // epoch seconds; 0 = not currently locked
+    };
+
     void purgeExpired();    // caller holds m_mutex
     static QString randomToken(int bytes = 32);
 
-    QHash<QString, Session> m_sessions;
+    QHash<QString, Session>   m_sessions;
+    QHash<QString, LoginGate> m_logins;
     int        m_ttl;
     QMutex     m_mutex;
 };

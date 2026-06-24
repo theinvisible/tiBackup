@@ -27,6 +27,9 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QHttpServerRequest>
 #include <QHttpServerResponder>
 #include <QHttpServerResponse>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+#include <QHttpHeaders>
+#endif
 #include <QTcpServer>
 #include <QSslServer>
 #include <QSslConfiguration>
@@ -75,12 +78,33 @@ QByteArray contentTypeFor(const QString &path)
 // 24.04) only has the older write() overloads. These helpers paper over that so
 // serveStatic() builds across all supported distros.
 void sendBody(QHttpServerResponder &responder, const QByteArray &mimeType,
-              const QByteArray &body,
+              const QByteArray &body, bool secure,
               QHttpServerResponse::StatusCode status = QHttpServerResponse::StatusCode::Ok)
 {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-    responder.sendResponse(QHttpServerResponse(mimeType, body, status));
+    QHttpServerResponse resp(mimeType, body, status);
+    // Defence-in-depth headers on every served asset/response: stop MIME sniffing,
+    // forbid framing (clickjacking) and leaking the URL via Referer. The strict
+    // Content-Security-Policy is delivered via a <meta> tag in index.html so it is
+    // applied uniformly across all Qt versions. HSTS only when actually on TLS.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    QHttpHeaders h = resp.headers();
+    h.append("X-Content-Type-Options", "nosniff");
+    h.append("X-Frame-Options", "DENY");
+    h.append("Referrer-Policy", "no-referrer");
+    if(secure)
+        h.append("Strict-Transport-Security", "max-age=31536000");
+    resp.setHeaders(std::move(h));
 #else
+    resp.addHeader("X-Content-Type-Options", "nosniff");
+    resp.addHeader("X-Frame-Options", "DENY");
+    resp.addHeader("Referrer-Policy", "no-referrer");
+    if(secure)
+        resp.addHeader("Strict-Transport-Security", "max-age=31536000");
+#endif
+    responder.sendResponse(resp);
+#else
+    Q_UNUSED(secure);
     responder.write(body, mimeType, status);
 #endif
 }
@@ -124,6 +148,7 @@ WebServer::WebServer(backupManager *manager, QObject *parent)
     const QString tlsCert = cfg.getValue("web/tls_cert").toString();
     const QString tlsKey  = cfg.getValue("web/tls_key").toString();
     const bool tls = !tlsCert.isEmpty() && !tlsKey.isEmpty();
+    m_tls = tls;
 
     bool ttlOk = false;
     int ttl = cfg.getValue("web/session_ttl").toInt(&ttlOk);
@@ -154,6 +179,23 @@ WebServer::WebServer(backupManager *manager, QObject *parent)
         std::cout << "tiBackup web UI listening on "
                   << (tls ? "https" : "http") << "://"
                   << bindAddr.toStdString() << ":" << port << std::endl;
+
+        // Plain HTTP on anything but loopback exposes the admin password and the
+        // session cookie in clear text on the wire. Warn loudly; TLS is opt-in
+        // via web/tls_cert + web/tls_key.
+        const bool loopback = bindAddr == QLatin1String("127.0.0.1")
+                              || bindAddr.startsWith(QLatin1String("127."))
+                              || bindAddr == QLatin1String("::1");
+        if(!tls && !loopback)
+        {
+            qWarning("tiBackup web UI: serving plain HTTP on non-loopback address %s - "
+                     "admin password and session cookie travel in clear text; set web/tls_cert + web/tls_key",
+                     qPrintable(bindAddr));
+            std::cerr << "tiBackup web UI WARNING: plain HTTP on non-loopback bind ("
+                      << bindAddr.toStdString()
+                      << ") - credentials sent in clear text. Configure web/tls_cert + web/tls_key."
+                      << std::endl;
+        }
     }
     else
     {
@@ -255,7 +297,7 @@ void WebServer::serveStatic(const QHttpServerRequest &request, QHttpServerRespon
     if(path.startsWith(QLatin1String("/api/")))
     {
         sendBody(responder, QByteArray("application/json"),
-            QByteArray("{\"error\":\"not found\"}"), QHttpServerResponse::StatusCode::NotFound);
+            QByteArray("{\"error\":\"not found\"}"), m_tls, QHttpServerResponse::StatusCode::NotFound);
         return;
     }
 
@@ -286,5 +328,5 @@ void WebServer::serveStatic(const QHttpServerRequest &request, QHttpServerRespon
         return;
     }
 
-    sendBody(responder, contentTypeFor(canonicalFull), f.readAll());
+    sendBody(responder, contentTypeFor(canonicalFull), f.readAll(), m_tls);
 }

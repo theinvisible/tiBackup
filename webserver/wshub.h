@@ -38,8 +38,9 @@ class SessionStore;
 //   {"type":"hello","version":...}
 //   {"type":"jobStatus","name":...,"status":"running|finished|failed|standby"}
 //   {"type":"logTail","line":"..."}
-// The upgrade is authorised by the session cookie (Qt >= 6.8 upgrade verifier).
-// On older Qt the WebSocket stays disabled and the frontend falls back to polling.
+// The upgrade is authorised by the session cookie: via the upgrade verifier on
+// Qt >= 6.8, and by re-checking the handshake cookie in acceptPending() on older
+// Qt (which has no verifier API). An unauthenticated client is rejected on both.
 class WsHub : public QObject
 {
     Q_OBJECT

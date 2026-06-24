@@ -3,6 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Content-Security-Policy: keep everything same-origin. 'unsafe-eval' is
+       required by the (standard) Alpine build's expression evaluator; styles need
+       'unsafe-inline' for the x-show/inline style attributes. No external origins
+       are allowed, which blocks injected third-party scripts and data exfil. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
+  <meta name="referrer" content="no-referrer">
   <title>tiBackup</title>
   <link rel="icon" href="img/tibackup.png">
   <link rel="stylesheet" href="css/fonts.css">

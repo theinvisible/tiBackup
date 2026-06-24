@@ -39,6 +39,8 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QFileInfo>
 #include <QDateTime>
 #include <QTextStream>
+#include <QHostAddress>
+#include <QRegularExpression>
 
 #include "config.h"
 #include "ticonf.h"
@@ -58,16 +60,53 @@ using Method     = QHttpServerRequest::Method;
 
 constexpr int kMaxLogTailBytes = 256 * 1024;
 
+// Stop content-type sniffing on API responses (defence-in-depth against a
+// browser treating a JSON body as something executable).
+void addSecurityHeaders(QHttpServerResponse &resp)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    QHttpHeaders h = resp.headers();
+    h.append("X-Content-Type-Options", "nosniff");
+    resp.setHeaders(std::move(h));
+#else
+    resp.addHeader("X-Content-Type-Options", "nosniff");
+#endif
+}
+
+// Names that are turned into "<dir>/<name>.conf" on disk (backup jobs). Reject
+// anything with path separators or traversal so a crafted name can't escape its
+// configured directory and write/delete arbitrary files as root.
+bool validIdentifier(const QString &s)
+{
+    if(s.isEmpty() || s.size() > 128)
+        return false;
+    static const QRegularExpression re(QStringLiteral("^[A-Za-z0-9._-]+$"));
+    if(!re.match(s).hasMatch())
+        return false;
+    return s != QLatin1String(".") && s != QLatin1String("..");
+}
+
+// PBServer uuids (QUuid without braces) likewise become file names on disk.
+bool validUuid(const QString &s)
+{
+    static const QRegularExpression re(QStringLiteral("^[0-9a-fA-F-]{8,64}$"));
+    return re.match(s).hasMatch();
+}
+
 QHttpServerResponse jsonResp(const QJsonObject &o, StatusCode status = StatusCode::Ok)
 {
-    return QHttpServerResponse(QByteArray("application/json"),
-                               QJsonDocument(o).toJson(QJsonDocument::Compact), status);
+    QHttpServerResponse resp(QByteArray("application/json"),
+                             QJsonDocument(o).toJson(QJsonDocument::Compact), status);
+    addSecurityHeaders(resp);
+    return resp;
 }
 
 QHttpServerResponse jsonResp(const QJsonArray &a, StatusCode status = StatusCode::Ok)
 {
-    return QHttpServerResponse(QByteArray("application/json"),
-                               QJsonDocument(a).toJson(QJsonDocument::Compact), status);
+    QHttpServerResponse resp(QByteArray("application/json"),
+                             QJsonDocument(a).toJson(QJsonDocument::Compact), status);
+    addSecurityHeaders(resp);
+    return resp;
 }
 
 QHttpServerResponse errResp(const QString &msg, StatusCode status)
@@ -133,9 +172,11 @@ QHttpServerResponse jsonRespCookie(const QJsonObject &o, const QByteArray &setCo
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     QHttpHeaders h = resp.headers();
     h.append(QHttpHeaders::WellKnownHeader::SetCookie, setCookie);
+    h.append("X-Content-Type-Options", "nosniff");
     resp.setHeaders(std::move(h));
 #else
     resp.addHeader("Set-Cookie", setCookie);
+    resp.addHeader("X-Content-Type-Options", "nosniff");
 #endif
     return resp;
 }
@@ -260,6 +301,11 @@ void ApiRouter::registerAuthRoutes()
 
     // POST /api/auth/login (public) -------------------------------------------
     m_server->route("/api/auth/login", Method::Post, [this](const QHttpServerRequest &req) {
+        const QString clientId = req.remoteAddress().toString();
+        if(!m_sessions->loginAllowed(clientId))
+            return errResp(QStringLiteral("too many failed attempts, try again later"),
+                           StatusCode::TooManyRequests);
+
         tiConfMain cfg;
         const QString passhash = cfg.getValue("web/passhash").toString();
         const QByteArray salt  = cfg.getValue("web/salt").toString().toLatin1();
@@ -267,8 +313,23 @@ void ApiRouter::registerAuthRoutes()
             return errResp(QStringLiteral("setup required"), StatusCode::Conflict);
 
         const QJsonObject body = parseBody(req);
-        if(!passwordhash::verify(body["password"].toString(), salt, passhash))
+        const QString pw = body["password"].toString();
+        if(!passwordhash::verify(pw, salt, passhash))
+        {
+            m_sessions->loginFailed(clientId);
             return errResp(QStringLiteral("invalid credentials"), StatusCode::Unauthorized);
+        }
+        m_sessions->loginSucceeded(clientId);
+
+        // We now hold a verified plaintext password: transparently migrate a
+        // legacy (iterated-SHA-256) hash to the stronger PBKDF2 scheme.
+        if(passwordhash::needsUpgrade(passhash))
+        {
+            const QByteArray newSalt = passwordhash::generateSalt();
+            cfg.setValue("web/salt", QString::fromLatin1(newSalt));
+            cfg.setValue("web/passhash", passwordhash::hash(pw, newSalt));
+            cfg.sync();
+        }
 
         QString csrf;
         const QString token = m_sessions->createSession(&csrf);
@@ -595,8 +656,9 @@ void ApiRouter::registerWriteRoutes()
         if(!isAuthed(req)) return unauthorized();
         if(!csrfOk(req))   return forbidden();
         const tiBackupJob job = jsonmap::jobFromJson(parseBody(req));
-        if(job.name.isEmpty())
-            return errResp(QStringLiteral("job name required"), StatusCode::BadRequest);
+        if(!validIdentifier(job.name))
+            return errResp(QStringLiteral("invalid job name (allowed: letters, digits, . _ -)"),
+                           StatusCode::BadRequest);
         tiConfBackupJobs jobs;
         jobs.readBackupJobs();
         if(jobs.getJobByName(job.name))
@@ -610,6 +672,8 @@ void ApiRouter::registerWriteRoutes()
         [this](const QString &name, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
         if(!csrfOk(req))   return forbidden();
+        if(!validIdentifier(name))
+            return errResp(QStringLiteral("invalid job name"), StatusCode::BadRequest);
         tiBackupJob job = jsonmap::jobFromJson(parseBody(req));
         tiConfBackupJobs jobs;
         jobs.readBackupJobs();
@@ -617,6 +681,8 @@ void ApiRouter::registerWriteRoutes()
             return errResp(QStringLiteral("job not found"), StatusCode::NotFound);
         if(!job.name.isEmpty() && job.name != name)
         {
+            if(!validIdentifier(job.name))
+                return errResp(QStringLiteral("invalid job name"), StatusCode::BadRequest);
             if(!jobs.renameJob(name, job.name))
                 return errResp(QStringLiteral("rename failed (target exists?)"), StatusCode::Conflict);
         }
@@ -633,6 +699,8 @@ void ApiRouter::registerWriteRoutes()
         [this](const QString &name, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
         if(!csrfOk(req))   return forbidden();
+        if(!validIdentifier(name))
+            return errResp(QStringLiteral("invalid job name"), StatusCode::BadRequest);
         tiConfBackupJobs jobs;
         if(!jobs.removeJobByName(name))
             return errResp(QStringLiteral("delete failed"), StatusCode::NotFound);
@@ -658,6 +726,10 @@ void ApiRouter::registerWriteRoutes()
         PBServer srv = jsonmap::pbServerFromJson(parseBody(req));
         if(srv.name.isEmpty() || srv.host.isEmpty())
             return errResp(QStringLiteral("name and host required"), StatusCode::BadRequest);
+        // The uuid becomes the on-disk file name; reject a client-supplied value
+        // that isn't a plain uuid so it can't traverse out of the pbservers dir.
+        if(!validUuid(srv.uuid))
+            return errResp(QStringLiteral("invalid server id"), StatusCode::BadRequest);
         tiConfPBServers::instance()->saveItem(srv);
         QJsonObject o;
         o["ok"]   = true;
@@ -670,6 +742,8 @@ void ApiRouter::registerWriteRoutes()
         [this](const QString &uuid, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
         if(!csrfOk(req))   return forbidden();
+        if(!validUuid(uuid))
+            return errResp(QStringLiteral("invalid server id"), StatusCode::BadRequest);
         tiConfPBServers::instance()->readItems();
         PBServer *existing = tiConfPBServers::instance()->getItemByUuid(uuid);
         if(!existing)
@@ -687,6 +761,8 @@ void ApiRouter::registerWriteRoutes()
         [this](const QString &uuid, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
         if(!csrfOk(req))   return forbidden();
+        if(!validUuid(uuid))
+            return errResp(QStringLiteral("invalid server id"), StatusCode::BadRequest);
         if(!tiConfPBServers::instance()->removeItemByUuid(uuid))
             return errResp(QStringLiteral("delete failed"), StatusCode::NotFound);
         return okResp();

@@ -68,6 +68,7 @@ private:
     backupManager *m_manager = nullptr;
     QString        m_docroot;
     bool           m_listening = false;
+    bool           m_tls       = false;   // serving over HTTPS (enables HSTS header)
 
     std::unique_ptr<SessionStore> m_sessions;
     std::unique_ptr<ApiRouter>    m_api;

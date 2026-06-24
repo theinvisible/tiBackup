@@ -26,6 +26,11 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QDateTime>
 #include <QRandomGenerator>
 
+namespace {
+constexpr int kMaxFails    = 5;     // consecutive failures before a lockout
+constexpr int kLockSeconds = 300;   // lockout duration (5 minutes)
+}
+
 SessionStore::SessionStore(int ttlSeconds)
     : m_ttl(ttlSeconds)
 {
@@ -88,6 +93,43 @@ void SessionStore::drop(const QString &token)
 {
     QMutexLocker lock(&m_mutex);
     m_sessions.remove(token);
+}
+
+bool SessionStore::loginAllowed(const QString &clientId)
+{
+    QMutexLocker lock(&m_mutex);
+    auto it = m_logins.find(clientId);
+    if(it == m_logins.end())
+        return true;
+
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+    if(it->lockedUntil > now)
+        return false;          // still locked
+
+    if(it->lockedUntil != 0)    // lock window elapsed -> forget the client
+        m_logins.erase(it);
+    return true;
+}
+
+void SessionStore::loginFailed(const QString &clientId)
+{
+    QMutexLocker lock(&m_mutex);
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+    LoginGate &g = m_logins[clientId];
+    if(g.lockedUntil > now)
+        return;                 // already locked; don't extend on every retry
+
+    if(++g.fails >= kMaxFails)
+    {
+        g.lockedUntil = now + kLockSeconds;
+        g.fails = 0;            // restart counting after the lock expires
+    }
+}
+
+void SessionStore::loginSucceeded(const QString &clientId)
+{
+    QMutexLocker lock(&m_mutex);
+    m_logins.remove(clientId);
 }
 
 void SessionStore::purgeExpired()

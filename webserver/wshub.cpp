@@ -27,6 +27,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QAbstractHttpServer>
 #include <QHttpServerRequest>
 #include <QWebSocket>
+#include <QNetworkRequest>
 #include <QFileSystemWatcher>
 #include <QFile>
 #include <QFileInfo>
@@ -47,9 +48,8 @@ namespace {
 // session store through this file-scope pointer set in the WsHub constructor.
 SessionStore *g_wsSessions = nullptr;
 
-QString wsCookieToken(const QHttpServerRequest &req)
+QString wsCookieTokenFromHeader(const QByteArray &header)
 {
-    const QByteArray header = req.value("Cookie");
     const QList<QByteArray> parts = header.split(';');
     for(const QByteArray &p : parts)
     {
@@ -59,6 +59,11 @@ QString wsCookieToken(const QHttpServerRequest &req)
             return QString::fromUtf8(t.mid(eq + 1));
     }
     return QString();
+}
+
+[[maybe_unused]] QString wsCookieToken(const QHttpServerRequest &req)
+{
+    return wsCookieTokenFromHeader(req.value("Cookie"));
 }
 
 QString statusString(backupManager::backupStatus s)
@@ -139,6 +144,21 @@ void WsHub::acceptPending()
             break;
         QWebSocket *ws = sock.release();
         ws->setParent(this);
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 8, 0)
+        // Qt < 6.8 has no addWebSocketUpgradeVerifier(), so the upgrade reaches us
+        // unauthenticated. Authorise it here from the handshake session cookie;
+        // otherwise any client that can reach the port could stream the live log
+        // tail. (On >= 6.8 the upgrade verifier in the ctor already did this.)
+        if(!m_sessions || !m_sessions->validate(
+               wsCookieTokenFromHeader(ws->request().rawHeader("Cookie"))))
+        {
+            ws->close(QWebSocketProtocol::CloseCodePolicyViolated, QStringLiteral("unauthorized"));
+            ws->deleteLater();
+            continue;
+        }
+#endif
+
         m_clients.append(ws);
 
         connect(ws, &QWebSocket::disconnected, this, [this, ws]() {

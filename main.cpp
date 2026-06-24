@@ -24,6 +24,8 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QCoreApplication>
 #include <QStringList>
 
+#include <sys/stat.h>   // umask
+
 #include <ticonf.h>
 #include <diskmain.h>
 #include "logging.h"
@@ -60,6 +62,12 @@ static int setWebPassword()
 
 int main(int argc, char *argv[])
 {
+    // This daemon runs as root and writes secrets (the web password hash, PBS/SMTP
+    // credentials) plus backup data. Force a private umask so every file/dir it
+    // creates is root-only by default (0600/0700) instead of inheriting a lax
+    // system umask that would leave config and logs world-readable.
+    umask(077);
+
     // Seed the debug gate from config before installing the handler so early
     // messages already honour it; the web UI updates it live afterwards.
     {

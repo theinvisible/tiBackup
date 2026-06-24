@@ -24,7 +24,38 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include "webserver/auth/passwordhash.h"
 
 #include <QCryptographicHash>
+#include <QPasswordDigestor>
 #include <QRandomGenerator>
+#include <QStringList>
+
+namespace {
+
+constexpr char kPbkdf2Prefix[] = "pbkdf2_sha256$";
+constexpr int  kKeyLen = 32;   // derived key length in bytes (256-bit)
+
+// Length-independent, content constant-time comparison of two byte arrays.
+bool constTimeEqual(const QByteArray &a, const QByteArray &b)
+{
+    if(a.size() != b.size())
+        return false;
+    quint8 diff = 0;
+    for(int i = 0; i < a.size(); ++i)
+        diff |= static_cast<quint8>(a[i]) ^ static_cast<quint8>(b[i]);
+    return diff == 0;
+}
+
+// The superseded scheme: SHA256(salt||password), then iterate SHA256(salt||digest).
+QByteArray legacyHashHex(const QString &password, const QByteArray &saltHex, int iterations)
+{
+    const QByteArray salt = QByteArray::fromHex(saltHex);
+    QByteArray digest = QCryptographicHash::hash(salt + password.toUtf8(),
+                                                 QCryptographicHash::Sha256);
+    for(int i = 1; i < iterations; ++i)
+        digest = QCryptographicHash::hash(salt + digest, QCryptographicHash::Sha256);
+    return digest.toHex();
+}
+
+} // namespace
 
 QByteArray passwordhash::generateSalt(int bytes)
 {
@@ -36,29 +67,42 @@ QByteArray passwordhash::generateSalt(int bytes)
 QString passwordhash::hash(const QString &password, const QByteArray &saltHex, int iterations)
 {
     const QByteArray salt = QByteArray::fromHex(saltHex);
+    const QByteArray derived = QPasswordDigestor::deriveKeyPbkdf2(
+        QCryptographicHash::Sha256, password.toUtf8(), salt, iterations, kKeyLen);
 
-    QByteArray digest = QCryptographicHash::hash(salt + password.toUtf8(),
-                                                 QCryptographicHash::Sha256);
-    for(int i = 1; i < iterations; ++i)
-        digest = QCryptographicHash::hash(salt + digest, QCryptographicHash::Sha256);
-
-    return QString::fromLatin1(digest.toHex());
+    return QString::fromLatin1(kPbkdf2Prefix) + QString::number(iterations)
+           + QLatin1Char('$') + QString::fromLatin1(derived.toHex());
 }
 
 bool passwordhash::verify(const QString &password, const QByteArray &saltHex,
-                          const QString &expectedHashHex, int iterations)
+                          const QString &expectedHash, int iterations)
 {
-    if(saltHex.isEmpty() || expectedHashHex.isEmpty())
+    Q_UNUSED(iterations);   // the cost is taken from the stored hash / legacy const
+    if(saltHex.isEmpty() || expectedHash.isEmpty())
         return false;
 
-    const QByteArray a = hash(password, saltHex, iterations).toLatin1();
-    const QByteArray b = expectedHashHex.toLatin1();
+    if(expectedHash.startsWith(QLatin1String(kPbkdf2Prefix)))
+    {
+        const QStringList parts = expectedHash.split(QLatin1Char('$'));
+        if(parts.size() != 3)
+            return false;
+        bool ok = false;
+        const int storedIter = parts.at(1).toInt(&ok);
+        if(!ok || storedIter <= 0)
+            return false;
 
-    if(a.size() != b.size())
-        return false;
+        const QByteArray salt = QByteArray::fromHex(saltHex);
+        const QByteArray derived = QPasswordDigestor::deriveKeyPbkdf2(
+            QCryptographicHash::Sha256, password.toUtf8(), salt, storedIter, kKeyLen);
+        return constTimeEqual(derived.toHex(), parts.at(2).toLatin1());
+    }
 
-    quint8 diff = 0;
-    for(int i = 0; i < a.size(); ++i)
-        diff |= static_cast<quint8>(a[i]) ^ static_cast<quint8>(b[i]);
-    return diff == 0;
+    // Legacy bare-hex iterated-SHA-256 hash (pre-migration installs).
+    return constTimeEqual(legacyHashHex(password, saltHex, kLegacyIterations),
+                          expectedHash.toLatin1());
+}
+
+bool passwordhash::needsUpgrade(const QString &storedHash)
+{
+    return !storedHash.startsWith(QLatin1String(kPbkdf2Prefix));
 }
