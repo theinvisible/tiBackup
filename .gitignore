@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------------------
+# tiBackup — ignored files (Qt 6 / CMake project)
+# ---------------------------------------------------------------------------
+
+# --- Build directories ------------------------------------------------------
+/build/
+/build-*/
+cmake-build-*/
+/out/
+/_build/
+
+# --- CMake ------------------------------------------------------------------
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+install_manifest.txt
+compile_commands.json
+.cmake/
+Testing/
+
+# --- Ninja / Make -----------------------------------------------------------
+*.ninja
+.ninja_deps
+.ninja_log
+
+# --- Qt build / autogen -----------------------------------------------------
+.qt/
+*_autogen/
+.qtc_clangd/
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.moc
+
+# --- Qt Creator / qmake user files ------------------------------------------
+*.pro.user
+*.pro.user.*
+CMakeLists.txt.user
+CMakeLists.txt.user.*
+*.autosave
+
+# --- IDEs / editors ---------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- Compiled output --------------------------------------------------------
+*.o
+*.obj
+*.so
+*.so.*
+*.a
+*.lo
+*.la
+*.dylib
+*.exe
+
+# --- Debian build artifacts -------------------------------------------------
+/debian/.debhelper/
+/debian/tibackup/
+/debian/files
+/debian/*.substvars
+/debian/*.debhelper.log
+/debian/debhelper-build-stamp
+*.deb
+*.ddeb
+*.buildinfo
+*.changes
