@@ -1,26 +1,26 @@
 name: deb
 
 # Build the tiBackup Debian package for every supported distribution and publish
-# release tags to the iteas aptly repository (https://apt-api.iteas.at/api).
+# release tags to the iteas aptly repository (aptly REST API).
 #
 #   * Pushes to master and version tags build the package once per target distro
-#     (Debian 13, Ubuntu 24.04, Ubuntu 26.04) inside the matching iteas build
-#     image, so dh_shlibdeps pins distro-correct dependency versions and the
-#     Qt6/libc ABI matches the target. tiBackupLib is built+installed as a .deb
-#     from the matching source ref first, so find_package + dh_shlibdeps resolve
-#     against a real package. Every build uploads the .deb as a workflow artifact.
-#   * Only version tags (v*) are published, via the upload_build_release recipe
-#     baked into the iteas build image (upload -> repo iteas-<codename> -> snapshot
-#     -> publish under filesystem:iteas:iteas, Release signed server-side), and
-#     attached to the GitHub Release. Master builds stay as artifacts only.
+#     (Debian 13, Ubuntu 24.04, Ubuntu 26.04) inside the matching stock container,
+#     so dh_shlibdeps pins distro-correct dependency versions and the Qt6/libc ABI
+#     matches the target. tiBackupLib is built+installed as a .deb from the
+#     matching source ref first, so find_package + dh_shlibdeps resolve against a
+#     real package. Every build uploads the .deb as a workflow artifact.
+#   * Only version tags (v*) are published: the .deb is pushed to the aptly REST
+#     API (upload -> repo iteas-<codename> -> snapshot -> publish under
+#     filesystem:iteas:iteas, Release signed server-side by aptly), and attached to
+#     the GitHub Release. Master builds stay as artifacts only. This mirrors the
+#     upload_build_release/update_build_release recipe used by the GitLab pipeline.
 #   * The legacy Cloudsmith publish is kept but disabled; re-enable it by setting
 #     the repository variable PUBLISH_CLOUDSMITH=true.
 #
 # Requires repository secrets:
-#   * APTLY_AUTH           - HTTP basic auth "user:password" for apt-api.iteas.at
-#   * ITEAS_REGISTRY_USER  - GitLab deploy token username (scope: read_registry)
-#   * ITEAS_REGISTRY_TOKEN - GitLab deploy token value
-#   * CLOUDSMITH_API_KEY   - only needed if the Cloudsmith path is re-enabled
+#   * APTLY_API          - base URL of the aptly REST API (kept out of this file)
+#   * APTLY_AUTH         - HTTP basic auth "user:password" for the aptly API
+#   * CLOUDSMITH_API_KEY - only needed if the Cloudsmith path is re-enabled
 
 on:
   push:
@@ -43,20 +43,17 @@ jobs:
       max-parallel: 1
       matrix:
         image:
-          - git.styrion.net:4567/iteas/docker-build-images/iteas-build-debian-13-64
-          - git.styrion.net:4567/iteas/docker-build-images/iteas-build-ubuntu-2404-64
-          - git.styrion.net:4567/iteas/docker-build-images/iteas-build-ubuntu-2604-64
+          - debian:13
+          - ubuntu:24.04
+          - ubuntu:26.04
     container:
       image: ${{ matrix.image }}
-      credentials:
-        username: ${{ secrets.ITEAS_REGISTRY_USER }}
-        password: ${{ secrets.ITEAS_REGISTRY_TOKEN }}
     steps:
       - name: Bootstrap container & install build dependencies
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            ca-certificates curl git lsb-release \
+            ca-certificates curl git \
             build-essential fakeroot devscripts debhelper cmake \
             qt6-base-dev qt6-base-dev-tools \
             qt6-httpserver-dev qt6-websockets-dev \
@@ -105,13 +102,42 @@ jobs:
       - name: Publish to iteas apt repository
         if: startsWith(github.ref, 'refs/tags/')
         env:
+          APTLY_API: ${{ secrets.APTLY_API }}
           APTLY_AUTH: ${{ secrets.APTLY_AUTH }}
         run: |
           set -euo pipefail
-          # upload_build_release is baked into the iteas build image (/usr/local/bin):
-          # uploads each .deb to repo iteas-<codename>, then re-snapshots and
-          # re-publishes under filesystem:iteas:iteas (Release signed server-side).
-          upload_build_release artifacts/*.deb
+          # Inline of the iteas upload_build_release/update_build_release recipe:
+          # aptly signs the Release server-side (GpgKey + PassphraseFile live on the
+          # aptly host), so CI only needs basic auth, never key material.
+          api="${APTLY_API}"
+          oscode="${CODENAME}"
+          updir="ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${oscode}"
+          curl_a=(curl --fail-with-body -sS -u "${APTLY_AUTH}")
+
+          # 1) upload the built .deb(s) into a per-run upload dir
+          for deb in artifacts/*.deb; do
+            "${curl_a[@]}" -X POST -F "file=@${deb}" "${api}/files/${updir}"
+          done
+
+          # 2) add the uploaded files to the shared per-codename local repo
+          resp=$("${curl_a[@]}" -X POST "${api}/repos/iteas-${oscode}/file/${updir}")
+          echo "$resp"
+          echo "$resp" | grep -qE '"FailedFiles":[[:space:]]*\[[[:space:]]*\]' \
+            || { echo "::error::aptly rejected one or more files"; exit 1; }
+
+          # 3) republish: drop old publication+snapshot (ignore 404 on first run),
+          #    create a fresh snapshot, then publish it (Release signed by aptly)
+          "${curl_a[@]}" -X DELETE "${api}/publish/filesystem:iteas:iteas/${oscode}" || true
+          "${curl_a[@]}" -X DELETE "${api}/snapshots/${oscode}-publish" || true
+          "${curl_a[@]}" -X POST -H 'Content-Type: application/json' \
+            --data "{\"Name\":\"${oscode}-publish\"}" \
+            "${api}/repos/iteas-${oscode}/snapshots"
+          "${curl_a[@]}" -X POST -H 'Content-Type: application/json' \
+            --data "{\"SourceKind\":\"snapshot\",\"Sources\":[{\"Name\":\"${oscode}-publish\"}],\"Architectures\":[\"i386\",\"amd64\"],\"Distribution\":\"${oscode}\",\"Signing\":{\"GpgKey\":\"23CAE45582EB0928\",\"PassphraseFile\":\"/root/gpg_passphrase_iteas\",\"Keyring\":\"/root/.gnupg/pubring.gpg\",\"SecretKeyring\":\"/root/.gnupg/secring.gpg\"}}" \
+            "${api}/publish/filesystem:iteas:iteas"
+
+          # 4) best-effort cleanup of the upload dir
+          "${curl_a[@]}" -X DELETE "${api}/files/${updir}" || true
 
       - name: Publish to Cloudsmith (disabled — set repo variable PUBLISH_CLOUDSMITH=true to re-enable)
         if: startsWith(github.ref, 'refs/tags/') && vars.PUBLISH_CLOUDSMITH == 'true'
