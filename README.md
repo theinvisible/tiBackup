@@ -2,7 +2,6 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 [![build-check](https://github.com/theinvisible/tiBackup/actions/workflows/build.yml/badge.svg)](https://github.com/theinvisible/tiBackup/actions/workflows/build.yml)
-[![Hosted By: Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 
 Backup daemon of **tiBackup** — an intelligent, disk-based backup system for Linux
 desktops and servers. Plug in a USB disk and a predefined backup job runs
@@ -40,7 +39,7 @@ WebSocket.
 - **Scheduled backups** — daily, weekly or monthly
 - **rsync-based** incremental file backups, with optional checksum comparison
 - **LUKS encryption** support for backup targets
-- **Proxmox Backup Server (PBS)** integration
+- **Proxmox Backup Server (PBS)** integration — compatible with **PBS 3.x and 4.x**
 - **E-mail notifications** when a job finishes (SMTP)
 - **Pre/post-backup scripts** with dynamic tiBackup variables
 - **Built-in web UI** — a modern, browser-based admin interface to manage jobs,
@@ -51,14 +50,17 @@ WebSocket.
 
 ## Installation
 
-Pre-built packages are published via Cloudsmith for **Debian 13 (trixie)**,
-**Ubuntu 24.04 (noble)** and **Ubuntu 26.04**. The setup script auto-detects your
-distribution:
+Pre-built `.deb` packages are published to the **iteas APT repository** for
+**Debian 13 (trixie)**, **Ubuntu 24.04 (noble)** and **Ubuntu 26.04**. Follow the
+repository setup instructions at **[apt.iteas.at](https://apt.iteas.at/)**, then:
 
 ```bash
-curl -1sLf 'https://dl.cloudsmith.io/public/ti-9x5p/tibackup/setup.deb.sh' | sudo -E bash
+sudo apt update
 sudo apt install tibackup
 ```
+
+The packages are also attached to each
+[GitHub release](https://github.com/theinvisible/tiBackup/releases).
 
 This installs the `tibackupd` systemd service and **enables and starts it
 automatically**. Set an admin password and open the web UI in your browser:
@@ -112,8 +114,8 @@ frontend — it is plain HTML/CSS/JS (Alpine.js + Open Props, vendored).
 Licensed under the **GNU General Public License v3.0 or later** (`GPL-3.0-or-later`).
 See [LICENSE](LICENSE).
 
-## Package hosting
+## Packages
 
-Package repository hosting is graciously provided by [Cloudsmith](https://cloudsmith.com).
-Cloudsmith is the only fully hosted, cloud-native, universal package management
-solution that lets you manage your software supply chain with confidence.
+Release `.deb` packages are hosted in the **iteas APT repository**
+([apt.iteas.at](https://apt.iteas.at/)) and attached to each
+[GitHub release](https://github.com/theinvisible/tiBackup/releases).
