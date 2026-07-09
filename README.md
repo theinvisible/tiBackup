@@ -3,11 +3,12 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 [![build-check](https://github.com/theinvisible/tiBackup/actions/workflows/build.yml/badge.svg)](https://github.com/theinvisible/tiBackup/actions/workflows/build.yml)
 
-Backup daemon of **tiBackup** — an intelligent, disk-based backup system for Linux
-desktops and servers. Plug in a USB disk and a predefined backup job runs
-automatically, or schedule jobs daily/weekly/monthly — with rsync, optional LUKS
-encryption, pre/post scripts, e-mail notifications and Proxmox Backup Server
-integration.
+**tiBackup** — an intelligent, disk-based backup system for Linux desktops and
+servers, shipping as a background **daemon** (`tibackupd`) with a **built-in,
+browser-based web UI** to manage everything (no separate client to install). Plug
+in a USB disk and a predefined backup job runs automatically, or schedule jobs
+daily/weekly/monthly — with rsync, optional LUKS encryption, pre/post scripts,
+e-mail notifications and Proxmox Backup Server integration.
 
 > **This repository** contains `tiBackup`, the background **daemon** (`tibackupd`).
 > It runs as **root**, listens for udev/hotplug and scheduled events, performs the
