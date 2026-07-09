@@ -23,6 +23,8 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 #include <QCoreApplication>
 #include <QStringList>
+#include <QProcess>
+#include <QFile>
 
 #include <sys/stat.h>   // umask
 
@@ -60,6 +62,35 @@ static int setWebPassword()
     return 0;
 }
 
+// Regenerate the self-signed web-UI certificate: `tiBackup --regenerate-web-cert`
+// (run as root). Delegates to the shared generator (also used by the package
+// postinst) with --force and exits without starting the daemon. Useful after a
+// hostname change or to renew the cert; restart tibackupd afterwards to load it.
+static int regenerateWebCert()
+{
+    QTextStream err(stderr);
+    const QString gen = QStringLiteral("/usr/lib/tibackup/gen-web-cert");
+    if(!QFile::exists(gen))
+    {
+        err << "Certificate generator " << gen << " not found (is the tibackup package installed?).\n";
+        return 1;
+    }
+
+    QProcess p;
+    p.setProcessChannelMode(QProcess::ForwardedChannels);
+    p.start(gen, QStringList() << QStringLiteral("--force"));
+    p.waitForStarted(-1);
+    p.waitForFinished(-1);
+    if(p.exitStatus() != QProcess::NormalExit || p.exitCode() != 0)
+    {
+        err << "Web certificate regeneration failed.\n";
+        return 1;
+    }
+
+    err << "Restart the daemon to apply the new certificate: systemctl restart tibackupd\n";
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     // This daemon runs as root and writes secrets (the web password hash, PBS/SMTP
@@ -82,6 +113,9 @@ int main(int argc, char *argv[])
 
     if(a.arguments().contains(QStringLiteral("--set-web-password")))
         return setWebPassword();
+
+    if(a.arguments().contains(QStringLiteral("--regenerate-web-cert")))
+        return regenerateWebCert();
 
     // DiskMain owns the backupManager that the scheduler/hotplug paths use; the
     // web UI drives manual backups and live status from that SAME instance.

@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Generate a self-signed TLS certificate for the web UI (Proxmox-style).
+        # Idempotent: keeps an existing cert, so this is safe on every upgrade too.
+        # Runs BEFORE #DEBHELPER# (which starts the daemon) so the cert already
+        # exists on first boot; the daemon then serves HTTPS automatically once
+        # /etc/tibackup/pki/tibackup-web.{pem,key} are present. A failure here is
+        # non-fatal: the daemon falls back to plain HTTP.
+        if [ -x /usr/lib/tibackup/gen-web-cert ]; then
+            /usr/lib/tibackup/gen-web-cert || \
+                echo "tiBackup: web certificate generation failed; the web UI will start on plain HTTP." >&2
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

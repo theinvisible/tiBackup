@@ -145,8 +145,26 @@ WebServer::WebServer(backupManager *manager, QObject *parent)
     if(qEnvironmentVariableIsSet("TIBACKUP_WEB_PORT"))
         port = static_cast<quint16>(qEnvironmentVariable("TIBACKUP_WEB_PORT").toUInt() & 0xFFFF);
 
-    const QString tlsCert = cfg.getValue("web/tls_cert").toString();
-    const QString tlsKey  = cfg.getValue("web/tls_key").toString();
+    QString tlsCert = cfg.getValue("web/tls_cert").toString();
+    QString tlsKey  = cfg.getValue("web/tls_key").toString();
+
+    // If no explicit cert/key are configured, fall back to the auto-generated
+    // self-signed pair under <config-dir>/pki (created by the package postinst or
+    // `tiBackup --regenerate-web-cert`). This makes the web UI serve HTTPS out of
+    // the box without any main.conf entry; explicit web/tls_cert + web/tls_key
+    // still take precedence. Only kicks in when BOTH files are actually present.
+    if(tlsCert.isEmpty() && tlsKey.isEmpty())
+    {
+        const QString confDir = QFileInfo(tibackup_config::mainConfigFile()).absolutePath();
+        const QString defCert = confDir + QStringLiteral("/pki/tibackup-web.pem");
+        const QString defKey  = confDir + QStringLiteral("/pki/tibackup-web.key");
+        if(QFile::exists(defCert) && QFile::exists(defKey))
+        {
+            tlsCert = defCert;
+            tlsKey  = defKey;
+        }
+    }
+
     const bool tls = !tlsCert.isEmpty() && !tlsKey.isEmpty();
     m_tls = tls;
 

@@ -9,6 +9,9 @@ override_dh_auto_install:
 	mkdir -p debian/tibackup/var/lib/tibackup/www
 	cp -a obj-x86_64-linux-gnu/tiBackup debian/tibackup/usr/bin/.
 	cp -a var/www/* debian/tibackup/var/lib/tibackup/www/.
+	# Self-signed web-cert generator, shared by the postinst and
+	# `tiBackup --regenerate-web-cert`.
+	install -D -m 0755 scripts/gen-web-cert.sh debian/tibackup/usr/lib/tibackup/gen-web-cert
 
 # The tibackupd systemd unit ships as debian/tibackup.tibackupd.service. Because
 # the unit name (tibackupd) differs from the package name (tibackup), dh_installsystemd
