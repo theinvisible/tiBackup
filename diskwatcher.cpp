@@ -33,23 +33,23 @@ void DiskWatcher::process()
 {
     // Work is here
     tiBackupDiskObserver *obs = new tiBackupDiskObserver();
-    QObject::connect(obs, SIGNAL(diskRemoved(DeviceDisk*)), this, SLOT(onDiskRemoved(DeviceDisk*)));
-    QObject::connect(obs, SIGNAL(diskAdded(DeviceDisk*)), this, SLOT(onDiskAdded(DeviceDisk*)));
+    QObject::connect(obs, &tiBackupDiskObserver::diskRemoved, this, &DiskWatcher::onDiskRemoved);
+    QObject::connect(obs, &tiBackupDiskObserver::diskAdded, this, &DiskWatcher::onDiskAdded);
     obs->start();
 
     emit finished();
 }
 
-void DiskWatcher::onDiskRemoved(DeviceDisk *disk)
+void DiskWatcher::onDiskRemoved(const DeviceDisk &disk)
 {
-    qDebug() << "DiskWatcher::onDiskRemoved() -> disk removed 111 ->" << disk->name;
+    qDebug() << "DiskWatcher::onDiskRemoved() -> disk removed 111 ->" << disk.name;
 
     emit diskRemoved(disk);
 }
 
-void DiskWatcher::onDiskAdded(DeviceDisk *disk)
+void DiskWatcher::onDiskAdded(const DeviceDisk &disk)
 {
-    qDebug() << "DiskWatcher::onDiskAdded() -> disk added 111 ->" << disk->name;
+    qDebug() << "DiskWatcher::onDiskAdded() -> disk added 111 ->" << disk.name;
 
     emit diskAdded(disk);
 }

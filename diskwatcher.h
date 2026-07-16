@@ -38,14 +38,14 @@ signals:
     void finished();
     void error(QString err);
 
-    void diskRemoved(DeviceDisk *disk);
-    void diskAdded(DeviceDisk *disk);
+    void diskRemoved(DeviceDisk disk);
+    void diskAdded(DeviceDisk disk);
 
 public slots:
     void process();
 
-    void onDiskRemoved(DeviceDisk *disk);
-    void onDiskAdded(DeviceDisk *disk);
+    void onDiskRemoved(const DeviceDisk &disk);
+    void onDiskAdded(const DeviceDisk &disk);
 
 };
 

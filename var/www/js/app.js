@@ -332,8 +332,20 @@ function app() {
     },
     async testPbs() {
       this.pbsTest = "…";
-      try { const r = await api.post("/api/pbs/test", this.pbsForm.uuid ? { uuid: this.pbsForm.uuid } : this.pbsForm); this.pbsTest = r.ok ? "Connection OK (" + r.status + ")" : "Failed (" + r.status + ")"; }
-      catch (e) { this.pbsTest = "Failed: " + e.message; }
+      try {
+        const r = await api.post("/api/pbs/test", this.pbsForm.uuid ? { uuid: this.pbsForm.uuid } : this.pbsForm);
+        if (r.ok) {
+          // Capture the presented certificate fingerprint so the admin can pin it
+          // (trust on first use); saving the form persists it. PBS backups now
+          // require a pinned fingerprint, so this is the way to establish trust.
+          if (r.fingerprint) this.pbsForm.fingerprint = r.fingerprint;
+          this.pbsTest = (r.verified === false)
+            ? "Connection OK but fingerprint MISMATCH — verify the server!"
+            : "Connection OK (" + r.status + ") — fingerprint captured";
+        } else {
+          this.pbsTest = "Failed (" + r.status + ")";
+        }
+      } catch (e) { this.pbsTest = "Failed: " + e.message; }
     },
     // job-editor PBS helpers
     async loadDatastores() {

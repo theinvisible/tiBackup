@@ -391,15 +391,14 @@ void ApiRouter::registerReadRoutes()
     m_server->route("/api/jobs", Method::Get, [this](const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
         tiConfBackupJobs jobs;
-        jobs.readBackupJobs();
         QJsonArray arr;
-        for(tiBackupJob *job : jobs.getJobs())
+        for(const tiBackupJob &job : jobs.getJobs())
         {
             QJsonObject o;
-            o["name"]           = job->name;
-            o["device"]         = job->device;
-            o["partition_uuid"] = job->partition_uuid;
-            o["status"]         = statusToString(m_manager->getBackupStatus(job->name));
+            o["name"]           = job.name;
+            o["device"]         = job.device;
+            o["partition_uuid"] = job.partition_uuid;
+            o["status"]         = statusToString(m_manager->getBackupStatus(job.name));
             arr.append(o);
         }
         return jsonResp(arr);
@@ -410,8 +409,7 @@ void ApiRouter::registerReadRoutes()
         [this](const QString &name, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
         tiConfBackupJobs jobs;
-        jobs.readBackupJobs();
-        tiBackupJob *job = jobs.getJobByName(name);
+        std::optional<tiBackupJob> job = jobs.getJobByName(name);
         if(!job) return errResp(QStringLiteral("job not found"), StatusCode::NotFound);
         QJsonObject o = jsonmap::jobToJson(*job);
         o["status"] = statusToString(m_manager->getBackupStatus(name));
@@ -449,10 +447,9 @@ void ApiRouter::registerReadRoutes()
     // GET /api/pbs (list, secrets omitted) ------------------------------------
     m_server->route("/api/pbs", Method::Get, [this](const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
-        tiConfPBServers::instance()->readItems();
         QJsonArray arr;
-        for(PBServer *srv : tiConfPBServers::instance()->getItems())
-            arr.append(jsonmap::pbServerToJson(*srv, false));
+        for(const PBServer &srv : tiConfPBServers::instance()->getItems())
+            arr.append(jsonmap::pbServerToJson(srv, false));
         return jsonResp(arr);
     });
 
@@ -460,8 +457,7 @@ void ApiRouter::registerReadRoutes()
     m_server->route("/api/pbs/<arg>", Method::Get,
         [this](const QString &uuid, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
-        tiConfPBServers::instance()->readItems();
-        PBServer *srv = tiConfPBServers::instance()->getItemByUuid(uuid);
+        std::optional<PBServer> srv = tiConfPBServers::instance()->getItemByUuid(uuid);
         if(!srv) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
         return jsonResp(jsonmap::pbServerToJson(*srv, false));
     });
@@ -469,10 +465,9 @@ void ApiRouter::registerReadRoutes()
     // GET /api/ssh (list, secrets omitted) ------------------------------------
     m_server->route("/api/ssh", Method::Get, [this](const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
-        tiConfSSHServers::instance()->readItems();
         QJsonArray arr;
-        for(SSHServer *srv : tiConfSSHServers::instance()->getItems())
-            arr.append(jsonmap::sshServerToJson(*srv, false));
+        for(const SSHServer &srv : tiConfSSHServers::instance()->getItems())
+            arr.append(jsonmap::sshServerToJson(srv, false));
         return jsonResp(arr);
     });
 
@@ -480,8 +475,7 @@ void ApiRouter::registerReadRoutes()
     m_server->route("/api/ssh/<arg>", Method::Get,
         [this](const QString &uuid, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
-        tiConfSSHServers::instance()->readItems();
-        SSHServer *srv = tiConfSSHServers::instance()->getItemByUuid(uuid);
+        std::optional<SSHServer> srv = tiConfSSHServers::instance()->getItemByUuid(uuid);
         if(!srv) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
         return jsonResp(jsonmap::sshServerToJson(*srv, false));
     });
@@ -690,7 +684,6 @@ void ApiRouter::registerWriteRoutes()
             return errResp(QStringLiteral("invalid job name (allowed: letters, digits, . _ -)"),
                            StatusCode::BadRequest);
         tiConfBackupJobs jobs;
-        jobs.readBackupJobs();
         if(jobs.getJobByName(job.name))
             return errResp(QStringLiteral("a job with that name already exists"), StatusCode::Conflict);
         jobs.saveBackupJob(job);
@@ -706,7 +699,6 @@ void ApiRouter::registerWriteRoutes()
             return errResp(QStringLiteral("invalid job name"), StatusCode::BadRequest);
         tiBackupJob job = jsonmap::jobFromJson(parseBody(req));
         tiConfBackupJobs jobs;
-        jobs.readBackupJobs();
         if(!jobs.getJobByName(name))
             return errResp(QStringLiteral("job not found"), StatusCode::NotFound);
         if(!job.name.isEmpty() && job.name != name)
@@ -774,8 +766,7 @@ void ApiRouter::registerWriteRoutes()
         if(!csrfOk(req))   return forbidden();
         if(!validUuid(uuid))
             return errResp(QStringLiteral("invalid server id"), StatusCode::BadRequest);
-        tiConfPBServers::instance()->readItems();
-        PBServer *existing = tiConfPBServers::instance()->getItemByUuid(uuid);
+        std::optional<PBServer> existing = tiConfPBServers::instance()->getItemByUuid(uuid);
         if(!existing)
             return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
         PBServer srv = jsonmap::pbServerFromJson(parseBody(req));
@@ -803,7 +794,7 @@ void ApiRouter::registerWriteRoutes()
         if(!isAuthed(req)) return unauthorized();
         if(!csrfOk(req))   return forbidden();
         const QJsonObject b = parseBody(req);
-        QString host, user, pass;
+        QString host, user, pass, expectedFp;
         int port = 8007;
         // Test an existing, saved server by uuid; otherwise test the inline
         // host/user/pass from the form. The "Add server" form always carries a
@@ -813,10 +804,10 @@ void ApiRouter::registerWriteRoutes()
         const QString uuid = b.value("uuid").toString();
         if(!uuid.isEmpty())
         {
-            tiConfPBServers::instance()->readItems();
-            PBServer *s = tiConfPBServers::instance()->getItemByUuid(uuid);
+            std::optional<PBServer> s = tiConfPBServers::instance()->getItemByUuid(uuid);
             if(!s) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
             host = s->host; port = s->port; user = s->username; pass = s->password;
+            expectedFp = s->fingerprint;
         }
         else
         {
@@ -824,13 +815,24 @@ void ApiRouter::registerWriteRoutes()
             port = b["port"].toInt(8007);
             user = b["username"].toString();
             pass = b["password"].toString();
+            expectedFp = b["fingerprint"].toString();
         }
         pbsClient *c = pbsClient::instanceUnique();
+        // Capture mode fetches the cert even when nothing is pinned yet, so the UI
+        // can show the fingerprint for the admin to pin (trust on first use). If a
+        // fingerprint is already provided we also verify against it.
+        c->setCaptureMode(true);
+        if(!expectedFp.isEmpty())
+            c->setExpectedFingerprint(expectedFp);
         const HttpStatus::Code code = c->auth(host, port, user, pass);
+        const QString presented = c->capturedFingerprint();
         c->deleteLater();
         QJsonObject o;
-        o["ok"]     = HttpStatus::isSuccessful(code);
-        o["status"] = static_cast<int>(code);
+        o["ok"]          = HttpStatus::isSuccessful(code);
+        o["status"]      = static_cast<int>(code);
+        o["fingerprint"] = presented;
+        if(!expectedFp.isEmpty())
+            o["verified"] = !presented.isEmpty() && pbsClient::fingerprintMatches(presented, expectedFp);
         return jsonResp(o);
     });
 
@@ -838,10 +840,10 @@ void ApiRouter::registerWriteRoutes()
     m_server->route("/api/pbs/<arg>/datastores", Method::Get,
         [this](const QString &uuid, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
-        tiConfPBServers::instance()->readItems();
-        PBServer *s = tiConfPBServers::instance()->getItemByUuid(uuid);
+        std::optional<PBServer> s = tiConfPBServers::instance()->getItemByUuid(uuid);
         if(!s) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
         pbsClient *c = pbsClient::instanceUnique();
+        c->setExpectedFingerprint(s->fingerprint);
         if(!HttpStatus::isSuccessful(c->auth(s->host, s->port, s->username, s->password)))
         {
             c->deleteLater();
@@ -858,10 +860,10 @@ void ApiRouter::registerWriteRoutes()
     m_server->route("/api/pbs/<arg>/datastores/<arg>/groups", Method::Get,
         [this](const QString &uuid, const QString &datastore, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
-        tiConfPBServers::instance()->readItems();
-        PBServer *s = tiConfPBServers::instance()->getItemByUuid(uuid);
+        std::optional<PBServer> s = tiConfPBServers::instance()->getItemByUuid(uuid);
         if(!s) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
         pbsClient *c = pbsClient::instanceUnique();
+        c->setExpectedFingerprint(s->fingerprint);
         if(!HttpStatus::isSuccessful(c->auth(s->host, s->port, s->username, s->password)))
         {
             c->deleteLater();
@@ -899,8 +901,7 @@ void ApiRouter::registerWriteRoutes()
         if(!csrfOk(req))   return forbidden();
         if(!validUuid(uuid))
             return errResp(QStringLiteral("invalid server id"), StatusCode::BadRequest);
-        tiConfSSHServers::instance()->readItems();
-        SSHServer *existing = tiConfSSHServers::instance()->getItemByUuid(uuid);
+        std::optional<SSHServer> existing = tiConfSSHServers::instance()->getItemByUuid(uuid);
         if(!existing)
             return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
         SSHServer srv = jsonmap::sshServerFromJson(parseBody(req));
@@ -935,8 +936,7 @@ void ApiRouter::registerWriteRoutes()
         const QString uuid = b.value("uuid").toString();
         if(!uuid.isEmpty())
         {
-            tiConfSSHServers::instance()->readItems();
-            SSHServer *s = tiConfSSHServers::instance()->getItemByUuid(uuid);
+            std::optional<SSHServer> s = tiConfSSHServers::instance()->getItemByUuid(uuid);
             if(!s) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
             srv = *s;
         }
@@ -966,8 +966,7 @@ void ApiRouter::registerWriteRoutes()
     m_server->route("/api/ssh/<arg>/browse", Method::Get,
         [this](const QString &uuid, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
-        tiConfSSHServers::instance()->readItems();
-        SSHServer *srv = tiConfSSHServers::instance()->getItemByUuid(uuid);
+        std::optional<SSHServer> srv = tiConfSSHServers::instance()->getItemByUuid(uuid);
         if(!srv) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
 
         const QString path = req.query().queryItemValue("path", QUrl::FullyDecoded);

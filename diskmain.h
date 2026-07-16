@@ -42,8 +42,8 @@ public:
 signals:
 
 public slots:
-    void onDiskRemoved(DeviceDisk *disk);
-    void onDiskAdded(DeviceDisk *disk);
+    void onDiskRemoved(const DeviceDisk &disk);
+    void onDiskAdded(DeviceDisk disk);   // by value: readPartitions() mutates it
     void onTaskCheck();
 
 private:

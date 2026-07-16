@@ -27,6 +27,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <cstdlib>
 
 #include <QFile>
+#include <QMutex>
 #include <QString>
 #include <QTextStream>
 #include <QDateTime>
@@ -42,6 +43,14 @@ std::atomic<bool> g_debugLogging{false};
 // Opened once on first message and kept open for the process lifetime, so we
 // don't re-read the config / reopen the file on every single log line.
 QFile *g_logFile = nullptr;
+
+// The Qt message handler is invoked concurrently from the main thread, the
+// disk-watcher thread and every backup-worker thread. Serialise the lazy file
+// creation and each write+flush so lines are not torn/interleaved and g_logFile
+// is not double-opened. Non-recursive is safe: the one-time init constructs
+// tiConfMain, which only emits a Qt log message on a missing config file - a
+// startup-only, single-threaded path that never overlaps a worker.
+QMutex g_logMutex;
 
 const char *levelTag(QtMsgType type)
 {
@@ -77,18 +86,24 @@ void logMessageOutput(QtMsgType type, const QMessageLogContext &, const QString 
     if(type == QtDebugMsg && !g_debugLogging.load(std::memory_order_relaxed))
         return;
 
-    if(g_logFile == nullptr)
     {
-        tiConfMain main_settings;
-        g_logFile = new QFile(QString("%1/tibackup.log").arg(main_settings.getValue("paths/logs").toString()));
-        g_logFile->open(QIODevice::Append | QIODevice::Text);
+        QMutexLocker lock(&g_logMutex);
+
+        if(g_logFile == nullptr)
+        {
+            tiConfMain main_settings;
+            g_logFile = new QFile(QString("%1/tibackup.log").arg(main_settings.getValue("paths/logs").toString()));
+            g_logFile->open(QIODevice::Append | QIODevice::Text);
+        }
+
+        QTextStream out(g_logFile);
+        out << QDateTime::currentDateTime().toString("MMM d hh:mm:ss")
+            << " [" << levelTag(type) << "] " << str << "\n";
+        g_logFile->flush();
     }
 
-    QTextStream out(g_logFile);
-    out << QDateTime::currentDateTime().toString("MMM d hh:mm:ss")
-        << " [" << levelTag(type) << "] " << str << "\n";
-    g_logFile->flush();
-
+    // Release the lock before aborting so a concurrent handler isn't left
+    // holding a destroyed mutex mid-write (abort() never returns anyway).
     if(type == QtFatalMsg)
         std::abort();
 }

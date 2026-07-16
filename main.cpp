@@ -108,6 +108,9 @@ int main(int argc, char *argv[])
     qInstallMessageHandler(tibackup::logMessageOutput);
 
     qRegisterMetaType<DeviceDiskPartition>("DeviceDiskPartition");
+    // Needed so DeviceDisk can be marshalled across the disk-watcher -> main
+    // thread queued connection (hotplug add/remove). Without it Qt drops the call.
+    qRegisterMetaType<DeviceDisk>("DeviceDisk");
 
     QCoreApplication a(argc, argv);
 

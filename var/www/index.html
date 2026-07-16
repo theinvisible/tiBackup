@@ -492,7 +492,8 @@
             <label>Username<input x-model="pbsForm.username"></label>
             <label>Password<input type="password" x-model="pbsForm.password" placeholder="(unchanged)"></label>
           </div>
-          <label>Fingerprint<input x-model="pbsForm.fingerprint"></label>
+          <label>Fingerprint<input x-model="pbsForm.fingerprint" placeholder="SHA-256, e.g. AB:CD:… — or capture via Test connection"></label>
+          <div class="small muted">Required: PBS backups only run against a pinned certificate fingerprint. Use “Test connection” to capture it, then Save.</div>
           <div class="grid2">
             <label>Key file<div class="inline"><input x-model="pbsForm.keyfile"><button type="button" class="btn btn-ghost btn-sm" @click="pickPbsKeyfile()">Browse</button></div></label>
             <label>Key passphrase<input type="password" x-model="pbsForm.keypass" placeholder="(unchanged)"></label>

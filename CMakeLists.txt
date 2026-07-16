@@ -72,3 +72,29 @@ target_link_libraries(tiBackup PRIVATE
 install(TARGETS tiBackup
     RUNTIME DESTINATION /usr/bin
 )
+
+# ---- Unit tests (opt-in: -DBUILD_TESTING=ON) --------------------------------
+# Regression coverage for the Prio-1 fixes (config value-semantics/threading,
+# PBS TLS fingerprint helpers, password hashing). Off by default so normal /
+# packaging builds are unaffected. Run under a sanitizer to catch the UAF class:
+#   cmake -B build -DBUILD_TESTING=ON -DCMAKE_CXX_FLAGS="-fsanitize=address" && ctest
+option(BUILD_TESTING "Build tiBackup unit tests" OFF)
+if(BUILD_TESTING)
+    enable_testing()
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+
+    qt_add_executable(tst_prio1
+        tests/tst_prio1.cpp
+        # passwordhash lives in the daemon (not the lib), so compile it in directly.
+        webserver/auth/passwordhash.cpp
+        webserver/auth/passwordhash.h
+    )
+    target_include_directories(tst_prio1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(tst_prio1 PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        tiBackupLib::tiBackupLib
+    )
+    add_test(NAME tst_prio1 COMMAND tst_prio1)
+endif()
