@@ -9,11 +9,12 @@ Rules-Requires-Root: no
 
 Package: tibackup
 Architecture: amd64
-Depends: ${shlibs:Depends}, ${misc:Depends}, tibackuplib (>= 0.8.1), libqt6httpserver6, libqt6websockets6, openssl
+Depends: ${shlibs:Depends}, ${misc:Depends}, tibackuplib (>= 0.8.2), libqt6httpserver6, libqt6websockets6, openssl, rsync, openssh-client
 Description: intelligent disk-based backup daemon for Linux
  tiBackup runs scheduled and hotplug-triggered backups to local and USB disks
  using rsync, with optional LUKS encryption, pre/post scripts, e-mail
- notifications and Proxmox Backup Server integration.
+ notifications, Proxmox Backup Server integration and rsync-over-SSH pulls from
+ remote Linux servers.
  .
  This package contains the root daemon (tibackupd) and its built-in,
  login-protected web UI.

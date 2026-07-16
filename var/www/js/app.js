@@ -14,10 +14,16 @@ function blankJob() {
     intervalType: 0, intervalTime: "00:00", intervalDay: 0,
     encLUKSType: 0, encLUKSFilePath: "",
     pbs: false, pbs_server_uuid: "", pbs_server_storage: "", pbs_backup_ids: [], pbs_dest_folder: "",
+    ssh: false, ssh_targets: [],
   };
 }
 function blankPbs() {
   return { uuid: "", name: "", host: "", port: 8007, username: "", password: "", fingerprint: "", keyfile: "", keypass: "" };
+}
+function blankSsh() {
+  // hostkey/fingerprint are populated by "Test connection"; hostkey rides along
+  // to the save payload so a freshly pinned key is persisted on create.
+  return { uuid: "", name: "", host: "", port: 22, username: "", keyfile: "", keypass: "", hostkey: "", fingerprint: "", hostkey_set: false };
 }
 
 // Daemon-log levels, ordered by severity. The daemon writes "[LEVEL]" into every
@@ -32,7 +38,7 @@ function app() {
   return {
     // ---- view state -------------------------------------------------------
     view: "loading",          // loading | setup | login | app
-    page: "dashboard",        // dashboard | pbs | settings | logs
+    page: "dashboard",        // dashboard | pbs | ssh | settings | logs
     theme: localStorage.getItem("theme") || "dark",
     busy: false,
     wsLive: false,
@@ -63,6 +69,9 @@ function app() {
     // pbs data used inside the job editor
     pbsDatastores: [], pbsGroups: [],
 
+    // ssh
+    ssh: [], sshEditorOpen: false, sshForm: blankSsh(), sshTest: "",
+
     // settings
     prefs: null,
 
@@ -70,7 +79,7 @@ function app() {
     scriptOpen: false, scriptPath: "", scriptContent: "", scriptField: "",
 
     // path picker (native-style file browser)
-    pickerOpen: false, pickerMode: "src", pickerUuid: "", pickerFiles: false,
+    pickerOpen: false, pickerMode: "src", pickerUuid: "", pickerSshUuid: "", pickerFiles: false,
     pickerBase: "", pickerPath: "", pickerParent: "", pickerEntries: [],
     pickerResolve: null, pickerSel: "", pickerSort: { key: "name", dir: 1 },
     folderIcon: '<svg viewBox="0 0 24 24" class="fi"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" fill="#5b8def"/></svg>',
@@ -141,6 +150,7 @@ function app() {
       this.page = p;
       if (p === "dashboard") this.loadDashboard();
       else if (p === "pbs") this.loadPbs();
+      else if (p === "ssh") this.loadSsh();
       else if (p === "settings") this.loadPrefs();
       else if (p === "logs") this.loadLogs();
     },
@@ -200,12 +210,16 @@ function app() {
       this.job = this.emptyJob(); this.editorNew = true; this.editorTab = "general"; this.editorOrigName = "";
       this.editorDevname = ""; this.editorMountDir = ""; this.partInfo = null; this.resetFolderForm();
       this.editorOpen = true;
-      await Promise.all([this.loadDevices(), this.loadPbs()]);
+      await Promise.all([this.loadDevices(), this.loadPbs(), this.loadSsh()]);
     },
     async editJob(name) {
       try {
         const job = await api.get("/api/jobs/" + encodeURIComponent(name));
         if (!job.backupdirs) job.backupdirs = [];
+        // Normalise SSH targets: ensure arrays + per-target draft input fields.
+        job.ssh_targets = (job.ssh_targets || []).map((t) => ({
+          server_uuid: t.server_uuid, backupdirs: t.backupdirs || [], _src: "", _dst: "",
+        }));
         const wantUuid = job.partition_uuid;
         this.editorNew = false; this.editorTab = "general"; this.editorOrigName = name;
         this.editorMountDir = ""; this.partInfo = null; this.resetFolderForm();
@@ -340,6 +354,80 @@ function app() {
       if (i >= 0) this.job.pbs_backup_ids.splice(i, 1); else this.job.pbs_backup_ids.push(id);
     },
 
+    // ---- SSH --------------------------------------------------------------
+    async loadSsh() { try { this.ssh = await api.get("/api/ssh"); } catch (e) { this.ssh = []; } },
+    newSsh() { this.sshForm = blankSsh(); this.sshTest = ""; this.sshEditorOpen = true; },
+    async editSsh(uuid) {
+      try {
+        const s = await api.get("/api/ssh/" + encodeURIComponent(uuid));
+        s.keypass = ""; s.hostkey = ""; s.fingerprint = "";
+        this.sshForm = s; this.sshTest = ""; this.sshEditorOpen = true;
+      } catch (e) { this.toast(e.message, "error"); }
+    },
+    async saveSsh() {
+      if (!this.sshForm.name || !this.sshForm.host || !this.sshForm.username) { this.toast("Name, host and username required", "error"); return; }
+      this.busy = true;
+      try {
+        if (this.sshForm.uuid) await api.put("/api/ssh/" + encodeURIComponent(this.sshForm.uuid), this.sshForm);
+        else await api.post("/api/ssh", this.sshForm);
+        this.sshEditorOpen = false; this.toast("SSH server saved"); this.loadSsh();
+      } catch (e) { this.toast("Save failed: " + e.message, "error"); }
+      this.busy = false;
+    },
+    async deleteSsh(uuid) {
+      if (!confirm("Remove this SSH server?")) return;
+      try { await api.del("/api/ssh/" + encodeURIComponent(uuid)); this.toast("SSH server removed"); this.loadSsh(); }
+      catch (e) { this.toast("Delete failed: " + e.message, "error"); }
+    },
+    async testSsh() {
+      this.sshTest = "…";
+      try {
+        const r = await api.post("/api/ssh/test", this.sshForm.uuid ? { uuid: this.sshForm.uuid } : this.sshForm);
+        if (r.ok) {
+          this.sshTest = "Connection OK — host key captured";
+          // Carry the captured key into the save payload so a new server persists
+          // it on create; existing servers were already pinned server-side.
+          this.sshForm.hostkey = r.hostkey || "";
+          this.sshForm.fingerprint = r.fingerprint || "";
+          this.loadSsh();
+        } else {
+          this.sshTest = "Failed" + (r.message ? ": " + r.message : "");
+        }
+      } catch (e) { this.sshTest = "Failed: " + e.message; }
+    },
+    // job-editor SSH helpers
+    sshHasTarget(uuid) { return this.job.ssh_targets.some((t) => t.server_uuid === uuid); },
+    toggleSshTarget(uuid) {
+      const i = this.job.ssh_targets.findIndex((t) => t.server_uuid === uuid);
+      if (i >= 0) this.job.ssh_targets.splice(i, 1);
+      else this.job.ssh_targets.push({ server_uuid: uuid, backupdirs: [], _src: "", _dst: "" });
+    },
+    sshName(uuid) { const s = this.ssh.find((x) => x.uuid === uuid); return s ? s.name : uuid; },
+    sshVerified(uuid) { const s = this.ssh.find((x) => x.uuid === uuid); return !!(s && s.hostkey_set); },
+    addSshFolder(ti) {
+      const t = this.job.ssh_targets[ti];
+      const src = (t._src || "").trim(), dst = (t._dst || "").trim();
+      if (!src || !dst) { this.toast("Source and destination required", "error"); return; }
+      t.backupdirs.push({ source: src, dest: dst });
+      t._src = ""; t._dst = "";
+    },
+    removeSshFolder(ti, fi) { this.job.ssh_targets[ti].backupdirs.splice(fi, 1); },
+    async pickSshSource(ti) {
+      const t = this.job.ssh_targets[ti];
+      if (!this.sshVerified(t.server_uuid)) { this.toast("Test the SSH connection first (SSH-Server page)", "error"); return; }
+      const p = await this.openPicker("sshsrc", { sshUuid: t.server_uuid, files: false });
+      if (p) t._src = p;
+    },
+    async pickSshDest(ti) {
+      if (!this.editorMountDir) { this.toast("Mount the partition first (General tab)", "error"); return; }
+      const p = await this.openPicker("dest", { uuid: this.job.partition_uuid, files: false });
+      if (p) this.job.ssh_targets[ti]._dst = this.toGeneric(p);
+    },
+    async pickSshKeyfile() {
+      const p = await this.openPicker("keyfile", { files: true });
+      if (p) this.sshForm.keyfile = p;
+    },
+
     // ---- settings ---------------------------------------------------------
     async loadPrefs() { try { this.prefs = await api.get("/api/prefs"); } catch (e) { this.toast(e.message, "error"); } },
     async savePrefs() {
@@ -447,6 +535,7 @@ function app() {
       opts = opts || {};
       this.pickerMode = mode;
       this.pickerUuid = opts.uuid || "";
+      this.pickerSshUuid = opts.sshUuid || "";
       this.pickerFiles = !!opts.files;
       this.pickerPath = ""; this.pickerSel = "";
       this.pickerSort = { key: "name", dir: 1 };
@@ -455,11 +544,18 @@ function app() {
       return new Promise((resolve) => { this.pickerResolve = resolve; });
     },
     async pickerLoad(path) {
-      const q = new URLSearchParams({ root: this.pickerMode, path: path || "" });
-      if (this.pickerUuid) q.set("uuid", this.pickerUuid);
-      if (this.pickerFiles) q.set("files", "1");
       try {
-        const r = await api.get("/api/browse?" + q.toString());
+        let r;
+        if (this.pickerSshUuid) {
+          // Remote listing over SSH — same {base,path,parent,entries} shape.
+          const q = new URLSearchParams({ path: path || "" });
+          r = await api.get("/api/ssh/" + encodeURIComponent(this.pickerSshUuid) + "/browse?" + q.toString());
+        } else {
+          const q = new URLSearchParams({ root: this.pickerMode, path: path || "" });
+          if (this.pickerUuid) q.set("uuid", this.pickerUuid);
+          if (this.pickerFiles) q.set("files", "1");
+          r = await api.get("/api/browse?" + q.toString());
+        }
         this.pickerBase = r.base; this.pickerPath = r.path; this.pickerParent = r.parent;
         this.pickerEntries = r.entries; this.pickerSel = "";
       } catch (e) { this.toast("Browse: " + e.message, "error"); }
@@ -515,6 +611,7 @@ function app() {
       return crumbs;
     },
     get pickerPlaces() {
+      if (this.pickerSshUuid) return [{ label: "Root", path: "/" }];
       if (this.pickerMode === "dest") return [{ label: "This disk", path: this.pickerBase }];
       if (this.pickerMode === "script") return [{ label: "Scripts", path: this.pickerBase }];
       return [

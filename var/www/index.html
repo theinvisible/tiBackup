@@ -57,6 +57,7 @@
       <nav class="nav">
         <button :class="{active: page==='dashboard'}" @click="go('dashboard')">Dashboard</button>
         <button :class="{active: page==='pbs'}" @click="go('pbs')">PBS</button>
+        <button :class="{active: page==='ssh'}" @click="go('ssh')">SSH-Server</button>
         <button :class="{active: page==='settings'}" @click="go('settings')">Settings</button>
         <button :class="{active: page==='logs'}" @click="go('logs')">Logs</button>
       </nav>
@@ -121,6 +122,30 @@
               <tr x-show="pbs.length===0"><td colspan="4" class="muted center">No PBS servers configured.</td></tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- SSH SERVERS -------------------------------------------------- -->
+      <section x-show="page==='ssh'">
+        <div class="card">
+          <div class="card-head"><h2>SSH Servers</h2><button class="btn btn-primary btn-sm" style="width:auto" @click="newSsh()">+ Add server</button></div>
+          <table class="table">
+            <thead><tr><th>Name</th><th>Host</th><th>User</th><th>Host key</th><th class="right">Actions</th></tr></thead>
+            <tbody>
+              <template x-for="s in ssh" :key="s.uuid">
+                <tr>
+                  <td x-text="s.name"></td><td x-text="s.host+':'+s.port"></td><td x-text="s.username"></td>
+                  <td><span class="small" :class="s.hostkey_set ? 'ok-text' : 'muted'" x-text="s.hostkey_set ? 'pinned' : 'not verified'"></span></td>
+                  <td class="right nowrap">
+                    <button class="btn btn-ghost btn-sm" @click="editSsh(s.uuid)">Edit</button>
+                    <button class="btn btn-ghost btn-sm danger" @click="deleteSsh(s.uuid)">Delete</button>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="ssh.length===0"><td colspan="5" class="muted center">No SSH servers configured.</td></tr>
+            </tbody>
+          </table>
+          <p class="small muted">Authentication is public-key only. When no key file is set, the tiBackup server's own SSH identity is used — make sure its public key is in the target's <span class="mono">authorized_keys</span>. Run “Test connection” to pin the host key before using a server in a job.</p>
         </div>
       </section>
 
@@ -213,6 +238,7 @@
           <button :class="{active:editorTab==='folders'}" @click="editorTab='folders'">Folders</button>
           <button :class="{active:editorTab==='schedule'}" @click="editorTab='schedule'">Schedule</button>
           <button :class="{active:editorTab==='pbs'}" @click="editorTab='pbs'">Proxmox</button>
+          <button :class="{active:editorTab==='ssh'}" @click="editorTab='ssh'">SSH-Server</button>
           <button :class="{active:editorTab==='advanced'}" @click="editorTab='advanced'">Advanced</button>
         </div>
         <div class="modal-body" x-show="job">
@@ -382,6 +408,68 @@
               </div>
             </template>
           </div>
+
+          <!-- ssh servers -->
+          <div x-show="editorTab==='ssh'">
+            <label class="check"><input type="checkbox" x-model="job.ssh"> Back up directories from SSH servers to this disk</label>
+            <p class="muted small" x-show="!job.ssh">Pull directories from one or more remote Linux servers via rsync-over-SSH and store them on this disk during the job run.</p>
+            <template x-if="job.ssh">
+              <div>
+                <p class="small muted" x-show="ssh.length===0">No SSH servers defined yet — add one on the “SSH-Server” page first.</p>
+                <div class="card-sub" x-show="ssh.length">
+                  <h3>Servers</h3>
+                  <template x-for="s in ssh" :key="s.uuid">
+                    <label class="check">
+                      <input type="checkbox" :checked="sshHasTarget(s.uuid)" @change="toggleSshTarget(s.uuid)">
+                      <span x-text="s.name + ' (' + s.username + '@' + s.host + ')'"></span>
+                      <span class="small muted" x-show="!s.hostkey_set"> — not verified, run “Test connection” first</span>
+                    </label>
+                  </template>
+                </div>
+
+                <template x-for="(t,ti) in job.ssh_targets" :key="t.server_uuid">
+                  <div class="card-sub">
+                    <h3 x-text="'Folders — ' + sshName(t.server_uuid)"></h3>
+                    <ul class="folder-list">
+                      <template x-for="(f,fi) in t.backupdirs" :key="fi">
+                        <li class="folder-item">
+                          <span class="folder-icon" x-html="folderIcon"></span>
+                          <div class="folder-paths">
+                            <span class="folder-src mono" x-text="f.source"></span>
+                            <span class="folder-arrow" aria-hidden="true">→</span>
+                            <span class="folder-dst mono" x-text="f.dest"></span>
+                          </div>
+                          <div class="folder-actions">
+                            <button type="button" class="icon-btn danger" title="Remove" @click="removeSshFolder(ti,fi)">✕</button>
+                          </div>
+                        </li>
+                      </template>
+                      <li class="folder-empty" x-show="t.backupdirs.length===0">No folders yet for this server.</li>
+                    </ul>
+                    <div class="folder-form">
+                      <label class="field">
+                        <span class="field-label">Remote source folder</span>
+                        <div class="field-row">
+                          <input placeholder="/etc" x-model="t._src">
+                          <button type="button" class="btn btn-ghost btn-sm" @click="pickSshSource(ti)" :disabled="!sshVerified(t.server_uuid)">Browse…</button>
+                        </div>
+                      </label>
+                      <label class="field">
+                        <span class="field-label">Destination on backup disk</span>
+                        <div class="field-row">
+                          <input placeholder="%MNTBACKUPDIR%/etc" x-model="t._dst">
+                          <button type="button" class="btn btn-ghost btn-sm" @click="pickSshDest(ti)">Browse…</button>
+                        </div>
+                      </label>
+                      <div class="folder-form-actions">
+                        <button type="button" class="btn btn-primary btn-sm" @click="addSshFolder(ti)">+ Add folder</button>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
         </div>
         <div class="modal-foot">
           <button class="btn btn-ghost" @click="editorOpen=false">Cancel</button>
@@ -412,6 +500,28 @@
           <div class="inline"><button type="button" class="btn btn-ghost btn-sm" @click="testPbs()">Test connection</button><span class="small muted" x-text="pbsTest"></span></div>
         </div>
         <div class="modal-foot"><button class="btn btn-ghost" @click="pbsEditorOpen=false">Cancel</button><button class="btn btn-primary" style="width:auto" @click="savePbs()" :disabled="busy">Save</button></div>
+      </div>
+    </div>
+
+    <!-- ============ SSH EDITOR ============ -->
+    <div class="modal-backdrop" x-show="sshEditorOpen" @click.self="sshEditorOpen=false" x-transition.opacity>
+      <div class="modal" x-show="sshEditorOpen" x-transition>
+        <div class="modal-head"><h2 x-text="sshForm && sshForm.uuid ? 'Edit SSH server' : 'Add SSH server'"></h2><button class="icon-btn" @click="sshEditorOpen=false">✕</button></div>
+        <div class="modal-body" x-show="sshForm">
+          <label>Name<input x-model="sshForm.name"></label>
+          <div class="grid2">
+            <label>Host<input x-model="sshForm.host"></label>
+            <label>Port<input type="number" x-model.number="sshForm.port"></label>
+          </div>
+          <label>Username<input x-model="sshForm.username" placeholder="root"></label>
+          <label>Key file <span class="small muted">(optional — default: the tiBackup server's own SSH key)</span>
+            <div class="inline"><input x-model="sshForm.keyfile" placeholder="(default identity)"><button type="button" class="btn btn-ghost btn-sm" @click="pickSshKeyfile()">Browse</button></div>
+          </label>
+          <label>Key passphrase <span class="small muted">(optional; encrypted keys need an ssh-agent for unattended runs)</span><input type="password" x-model="sshForm.keypass" placeholder="(unchanged)"></label>
+          <div class="inline"><button type="button" class="btn btn-ghost btn-sm" @click="testSsh()">Test connection</button><span class="small muted" x-text="sshTest"></span></div>
+          <p class="small mono" x-show="sshForm.fingerprint" style="white-space:pre-wrap" x-text="sshForm.fingerprint"></p>
+        </div>
+        <div class="modal-foot"><button class="btn btn-ghost" @click="sshEditorOpen=false">Cancel</button><button class="btn btn-primary" style="width:auto" @click="saveSsh()" :disabled="busy">Save</button></div>
       </div>
     </div>
 

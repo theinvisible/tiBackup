@@ -48,7 +48,9 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include "tibackuplib.h"
 #include "backupmanager.h"
 #include "pbsclient.h"
+#include "sshclient.h"
 #include "obj/pbserver.h"
+#include "obj/sshserver.h"
 #include "webserver/jsonmap.h"
 #include "webserver/auth/passwordhash.h"
 #include "webserver/auth/sessionstore.h"
@@ -464,6 +466,26 @@ void ApiRouter::registerReadRoutes()
         return jsonResp(jsonmap::pbServerToJson(*srv, false));
     });
 
+    // GET /api/ssh (list, secrets omitted) ------------------------------------
+    m_server->route("/api/ssh", Method::Get, [this](const QHttpServerRequest &req) {
+        if(!isAuthed(req)) return unauthorized();
+        tiConfSSHServers::instance()->readItems();
+        QJsonArray arr;
+        for(SSHServer *srv : tiConfSSHServers::instance()->getItems())
+            arr.append(jsonmap::sshServerToJson(*srv, false));
+        return jsonResp(arr);
+    });
+
+    // GET /api/ssh/<uuid> -----------------------------------------------------
+    m_server->route("/api/ssh/<arg>", Method::Get,
+        [this](const QString &uuid, const QHttpServerRequest &req) {
+        if(!isAuthed(req)) return unauthorized();
+        tiConfSSHServers::instance()->readItems();
+        SSHServer *srv = tiConfSSHServers::instance()->getItemByUuid(uuid);
+        if(!srv) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
+        return jsonResp(jsonmap::sshServerToJson(*srv, false));
+    });
+
     // GET /api/logs/main?lines=N ----------------------------------------------
     m_server->route("/api/logs/main", [this](const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
@@ -850,6 +872,141 @@ void ApiRouter::registerWriteRoutes()
         if(!HttpStatus::isSuccessful(resp.status))
             return errResp(QStringLiteral("PBS request failed"), StatusCode::BadGateway);
         return jsonResp(resp.data.object().value("data").toArray());
+    });
+
+    // POST /api/ssh (create) --------------------------------------------------
+    m_server->route("/api/ssh", Method::Post, [this](const QHttpServerRequest &req) {
+        if(!isAuthed(req)) return unauthorized();
+        if(!csrfOk(req))   return forbidden();
+        SSHServer srv = jsonmap::sshServerFromJson(parseBody(req));
+        if(srv.name.isEmpty() || srv.host.isEmpty() || srv.username.isEmpty())
+            return errResp(QStringLiteral("name, host and username required"), StatusCode::BadRequest);
+        // The uuid becomes the on-disk file name; reject a client-supplied value
+        // that isn't a plain uuid so it can't traverse out of the sshservers dir.
+        if(!validUuid(srv.uuid))
+            return errResp(QStringLiteral("invalid server id"), StatusCode::BadRequest);
+        tiConfSSHServers::instance()->saveItem(srv);
+        QJsonObject o;
+        o["ok"]   = true;
+        o["uuid"] = srv.uuid;
+        return jsonResp(o);
+    });
+
+    // PUT /api/ssh/<uuid> (update; hostkey/keypass preserved if omitted) ------
+    m_server->route("/api/ssh/<arg>", Method::Put,
+        [this](const QString &uuid, const QHttpServerRequest &req) {
+        if(!isAuthed(req)) return unauthorized();
+        if(!csrfOk(req))   return forbidden();
+        if(!validUuid(uuid))
+            return errResp(QStringLiteral("invalid server id"), StatusCode::BadRequest);
+        tiConfSSHServers::instance()->readItems();
+        SSHServer *existing = tiConfSSHServers::instance()->getItemByUuid(uuid);
+        if(!existing)
+            return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
+        SSHServer srv = jsonmap::sshServerFromJson(parseBody(req));
+        srv.uuid = uuid;
+        if(srv.keypass.isEmpty()) srv.keypass = existing->keypass;
+        if(srv.hostkey.isEmpty()) srv.hostkey = existing->hostkey;
+        tiConfSSHServers::instance()->saveItem(srv);
+        return okResp();
+    });
+
+    // DELETE /api/ssh/<uuid> --------------------------------------------------
+    m_server->route("/api/ssh/<arg>", Method::Delete,
+        [this](const QString &uuid, const QHttpServerRequest &req) {
+        if(!isAuthed(req)) return unauthorized();
+        if(!csrfOk(req))   return forbidden();
+        if(!validUuid(uuid))
+            return errResp(QStringLiteral("invalid server id"), StatusCode::BadRequest);
+        if(!tiConfSSHServers::instance()->removeItemByUuid(uuid))
+            return errResp(QStringLiteral("delete failed"), StatusCode::NotFound);
+        return okResp();
+    });
+
+    // POST /api/ssh/test ------------------------------------------------------
+    // Tests public-key auth and captures the host key. For an existing server
+    // (uuid set) the freshly captured key is pinned immediately; for a new one
+    // the key + fingerprint are returned so the client can save them.
+    m_server->route("/api/ssh/test", Method::Post, [this](const QHttpServerRequest &req) {
+        if(!isAuthed(req)) return unauthorized();
+        if(!csrfOk(req))   return forbidden();
+        const QJsonObject b = parseBody(req);
+        SSHServer srv;
+        const QString uuid = b.value("uuid").toString();
+        if(!uuid.isEmpty())
+        {
+            tiConfSSHServers::instance()->readItems();
+            SSHServer *s = tiConfSSHServers::instance()->getItemByUuid(uuid);
+            if(!s) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
+            srv = *s;
+        }
+        else
+        {
+            srv = jsonmap::sshServerFromJson(b);
+        }
+        const sshClient::TestResult tr = sshClient::test(srv);
+        QJsonObject o;
+        o["ok"]          = tr.ok;
+        o["fingerprint"] = tr.fingerprint;
+        o["hostkey"]     = tr.hostkey;
+        if(!tr.ok)
+            o["message"] = tr.message;
+        if(tr.ok && !uuid.isEmpty() && !tr.hostkey.isEmpty())
+        {
+            srv.uuid = uuid;
+            srv.hostkey = tr.hostkey;
+            tiConfSSHServers::instance()->saveItem(srv);
+        }
+        return jsonResp(o);
+    });
+
+    // GET /api/ssh/<uuid>/browse?path= (remote directory listing over SSH) -----
+    // Returns the same {base, path, parent, entries} shape as /api/browse so the
+    // frontend path picker can render it unchanged.
+    m_server->route("/api/ssh/<arg>/browse", Method::Get,
+        [this](const QString &uuid, const QHttpServerRequest &req) {
+        if(!isAuthed(req)) return unauthorized();
+        tiConfSSHServers::instance()->readItems();
+        SSHServer *srv = tiConfSSHServers::instance()->getItemByUuid(uuid);
+        if(!srv) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
+
+        const QString path = req.query().queryItemValue("path", QUrl::FullyDecoded);
+        const QString target = path.isEmpty() ? QStringLiteral("/") : path;
+
+        const sshClient::ListResult lr = sshClient::listDir(*srv, target);
+        if(!lr.ok)
+            return errResp(lr.message.isEmpty() ? QStringLiteral("remote listing failed") : lr.message,
+                           StatusCode::BadGateway);
+
+        QJsonArray entries;
+        for(const sshClient::DirEntry &e : lr.entries)
+        {
+            QJsonObject je;
+            je["name"]  = e.name;
+            je["isDir"] = e.isDir;
+            je["size"]  = static_cast<qint64>(e.size);
+            je["mtime"] = static_cast<qint64>(e.mtime);
+            entries.append(je);
+        }
+
+        // POSIX string math: the remote path has no local canonicalisation.
+        QString parent;
+        if(target == QLatin1String("/"))
+        {
+            parent = QStringLiteral("/");
+        }
+        else
+        {
+            const int idx = target.lastIndexOf('/');
+            parent = (idx <= 0) ? QStringLiteral("/") : target.left(idx);
+        }
+
+        QJsonObject o;
+        o["base"]    = QStringLiteral("/");
+        o["path"]    = target;
+        o["parent"]  = parent;
+        o["entries"] = entries;
+        return jsonResp(o);
     });
 
     // PUT /api/scripts {path, content} ---------------------------------------

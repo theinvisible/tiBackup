@@ -27,6 +27,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 #include "obj/tibackupjob.h"
 #include "obj/pbserver.h"
+#include "obj/sshserver.h"
 #include "obj/devicedisk.h"
 
 QJsonObject jsonmap::jobToJson(const tiBackupJob &job)
@@ -73,6 +74,25 @@ QJsonObject jsonmap::jobToJson(const tiBackupJob &job)
     o["pbs_backup_ids"] = ids;
     o["pbs_dest_folder"] = job.pbs_dest_folder;
 
+    o["ssh"] = job.ssh;
+    QJsonArray sshTargets;
+    for(const tiBackupJobSSHTarget &t : job.ssh_targets)
+    {
+        QJsonObject to;
+        to["server_uuid"] = t.server_uuid;
+        QJsonArray tdirs;
+        for(auto it = t.backupdirs.cbegin(); it != t.backupdirs.cend(); ++it)
+        {
+            QJsonObject d;
+            d["source"] = it.key();
+            d["dest"]   = it.value();
+            tdirs.append(d);
+        }
+        to["backupdirs"] = tdirs;
+        sshTargets.append(to);
+    }
+    o["ssh_targets"] = sshTargets;
+
     return o;
 }
 
@@ -116,6 +136,22 @@ tiBackupJob jsonmap::jobFromJson(const QJsonObject &o)
         job.pbs_backup_ids.append(v.toString());
     job.pbs_dest_folder = o["pbs_dest_folder"].toString();
 
+    job.ssh = o["ssh"].toBool();
+    const QJsonArray sshTargets = o["ssh_targets"].toArray();
+    for(const QJsonValue &tv : sshTargets)
+    {
+        const QJsonObject to = tv.toObject();
+        tiBackupJobSSHTarget t;
+        t.server_uuid = to["server_uuid"].toString();
+        const QJsonArray tdirs = to["backupdirs"].toArray();
+        for(const QJsonValue &dv : tdirs)
+        {
+            const QJsonObject d = dv.toObject();
+            t.backupdirs.insert(d["source"].toString(), d["dest"].toString());
+        }
+        job.ssh_targets.append(t);
+    }
+
     return job;
 }
 
@@ -152,6 +188,40 @@ PBServer jsonmap::pbServerFromJson(const QJsonObject &o)
     srv.fingerprint = o["fingerprint"].toString();
     srv.keyfile     = o["keyfile"].toString();
     srv.keypass     = o["keypass"].toString();
+    return srv;
+}
+
+QJsonObject jsonmap::sshServerToJson(const SSHServer &srv, bool includeSecrets)
+{
+    QJsonObject o;
+    o["uuid"]     = srv.uuid;
+    o["name"]     = srv.name;
+    o["host"]     = srv.host;
+    o["port"]     = static_cast<int>(srv.port);
+    o["username"] = srv.username;
+    o["keyfile"]  = srv.keyfile;
+    // Whether a host key has been pinned yet (drives the "verified" UI state)
+    // without leaking the key material itself.
+    o["hostkey_set"] = !srv.hostkey.isEmpty();
+    if(includeSecrets)
+        o["keypass"] = srv.keypass;
+    return o;
+}
+
+SSHServer jsonmap::sshServerFromJson(const QJsonObject &o)
+{
+    SSHServer srv; // ctor generates a fresh uuid; keep it unless one is supplied
+    const QString uuid = o["uuid"].toString();
+    if(!uuid.isEmpty())
+        srv.uuid = uuid;
+
+    srv.name     = o["name"].toString();
+    srv.host     = o["host"].toString();
+    srv.port     = static_cast<uint>(o["port"].toInt(22));
+    srv.username = o["username"].toString();
+    srv.keyfile  = o["keyfile"].toString();
+    srv.keypass  = o["keypass"].toString();
+    srv.hostkey  = o["hostkey"].toString();
     return srv;
 }
 

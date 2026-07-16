@@ -28,6 +28,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 class tiBackupJob;
 class PBServer;
+class SSHServer;
 class DeviceDisk;
 class DeviceDiskPartition;
 
@@ -42,6 +43,10 @@ tiBackupJob jobFromJson(const QJsonObject &o);
 // which is never the case for GET responses.
 QJsonObject pbServerToJson(const PBServer &srv, bool includeSecrets = false);
 PBServer    pbServerFromJson(const QJsonObject &o);
+
+// Secrets (keypass) are only serialized when includeSecrets is true.
+QJsonObject sshServerToJson(const SSHServer &srv, bool includeSecrets = false);
+SSHServer   sshServerFromJson(const QJsonObject &o);
 
 QJsonObject partitionToJson(const DeviceDiskPartition &p);
 QJsonObject diskToJson(const DeviceDisk &d);
