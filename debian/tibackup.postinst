@@ -5,7 +5,7 @@ case "$1" in
     configure)
         # Generate a self-signed TLS certificate for the web UI (Proxmox-style).
         # Idempotent: keeps an existing cert, so this is safe on every upgrade too.
-        # Runs BEFORE #DEBHELPER# (which starts the daemon) so the cert already
+        # Runs BEFORE the debhelper-generated snippet (which starts the daemon) so the cert already
         # exists on first boot; the daemon then serves HTTPS automatically once
         # /etc/tibackup/pki/tibackup-web.{pem,key} are present. A failure here is
         # non-fatal: the daemon falls back to plain HTTP.

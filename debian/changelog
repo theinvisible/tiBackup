@@ -1,3 +1,19 @@
+tibackup (0.8.3) unstable; urgency=low
+
+  * Fix postinst syntax error that aborted package configuration ("word
+    unexpected (expecting ;;)"). The maintainer script comment contained a
+    literal #DEBHELPER# token, which dh_installdeb expanded inline into the
+    middle of the configure) case branch, corrupting the script. Reworded the
+    comment so the token only appears on its own line.
+
+ -- Rene Hadler <rene@hadler.me>  Thu, 16 Jul 2026 13:00:00 +0200
+
+tibackup (0.8.3) unstable; urgency=low
+
+  * For changelog see git commits
+
+ -- Rene Hadler <rene@hadler.me>  Thu, 16 Jul 2026 12:30:00 +0200
+
 tibackup (0.8.2) unstable; urgency=low
 
   * Add SSH-Server backups: pull directories from remote Linux servers via
