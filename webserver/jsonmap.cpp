@@ -51,6 +51,7 @@ QJsonObject jsonmap::jobToJson(const tiBackupJob &job)
     o["start_backup_on_hotplug"] = job.start_backup_on_hotplug;
     o["save_log"]                = job.save_log;
     o["compare_via_checksum"]    = job.compare_via_checksum;
+    o["umount_after_backup"]     = job.umount_after_backup;
 
     o["notify"]           = job.notify;
     o["notifyRecipients"] = job.notifyRecipients;
@@ -114,6 +115,9 @@ tiBackupJob jsonmap::jobFromJson(const QJsonObject &o)
     job.start_backup_on_hotplug = o["start_backup_on_hotplug"].toBool();
     job.save_log                = o["save_log"].toBool();
     job.compare_via_checksum    = o["compare_via_checksum"].toBool();
+    // Absent -> true (default on) so a client that doesn't send the field, or an
+    // older job payload, keeps unmounting after the backup.
+    job.umount_after_backup     = o.contains("umount_after_backup") ? o["umount_after_backup"].toBool() : true;
 
     job.notify           = o["notify"].toBool();
     job.notifyRecipients = o["notifyRecipients"].toString();

@@ -1,3 +1,25 @@
+tibackup (0.9.1) unstable; urgency=low
+
+  * Web UI extensions:
+    - File browser can now create folders: a "New folder" action in the path
+      picker, backed by POST /api/mkdir (local roots, same confinement as
+      /api/browse) and POST /api/ssh/<uuid>/mkdir (remote SSH targets).
+    - Logs tab: a new "rsync logs" card exposes the per-job raw rsync --log-file
+      output (GET /api/logs/rsync and /api/logs/rsync/<job>/<file>).
+    - Logs tab: running jobs are highlighted, and a running job's run log can be
+      watched live — GET /api/logs/runs/<file>?offset=N returns an incremental
+      tail that the run-log viewer polls while the job runs.
+    - Settings: a "Send test mail" button (POST /api/prefs/test-mail) verifies the
+      SMTP settings over the same transport as backup notifications; it can test
+      unsaved form values and honours the write-only password (blank = stored).
+  * Fix: the backup target is unmounted again after a successful run. A guard added
+    during earlier hardening (Prio-2) only unmounted drives tiBackup had mounted
+    itself, so a target already mounted at job start (e.g. auto-mounted by the OS on
+    insertion) was left mounted. Now controlled by a per-job "Unmount drive after
+    backup" option (default on), which unmounts regardless of who mounted the drive.
+
+ -- Rene Hadler <rene@hadler.me>  Fri, 17 Jul 2026 14:30:00 +0200
+
 tibackup (0.9.0) unstable; urgency=low
 
   * Prio-3 hardening batch:

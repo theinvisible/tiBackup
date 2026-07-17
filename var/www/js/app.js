@@ -8,7 +8,7 @@ function blankJob() {
   return {
     name: "", device: "", partition_uuid: "", backupdirs: [],
     delete_add_file_on_dest: false, start_backup_on_hotplug: false,
-    save_log: true, compare_via_checksum: false,
+    save_log: true, compare_via_checksum: false, umount_after_backup: true,
     notify: false, notifyRecipients: "",
     scriptBeforeBackup: "", scriptAfterBackup: "",
     intervalType: 0, intervalTime: "00:00", intervalDay: 0,
@@ -54,6 +54,9 @@ function app() {
     // logs tab: daemon log (level-filtered) + run logs grouped by job
     runs: [], runText: "", runOpen: false,
     logLines: [], logLevel: "info", openGroups: {},
+    // rsync per-job logs (grouped by job) + live run-log tail state
+    rsyncRuns: [], openRsyncGroups: {},
+    runLive: false, runFile: "", runName: "", runOffset: 0, runTimer: null, runTailBusy: false,
     pollTimer: null,
 
     // devices (loaded for the job editor)
@@ -74,6 +77,7 @@ function app() {
 
     // settings
     prefs: null,
+    testMailTo: "", testMailBusy: false,
 
     // script editor
     scriptOpen: false, scriptDir: "", scriptName: "", scriptContent: "", scriptField: "",
@@ -82,6 +86,7 @@ function app() {
     pickerOpen: false, pickerMode: "src", pickerUuid: "", pickerSshUuid: "", pickerFiles: false,
     pickerBase: "", pickerPath: "", pickerParent: "", pickerEntries: [],
     pickerResolve: null, pickerSel: "", pickerSort: { key: "name", dir: 1 },
+    pickerCreating: false, pickerNewName: "",
     folderIcon: '<svg viewBox="0 0 24 24" class="fi"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" fill="#5b8def"/></svg>',
     fileIcon: '<svg viewBox="0 0 24 24" class="fi"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" fill="#9aa4b2"/><path d="M14 2v6h6z" fill="#ced6e0"/></svg>',
 
@@ -167,6 +172,12 @@ function app() {
       if (msg.type === "jobStatus") {
         const j = this.jobs.find((x) => x.name === msg.name);
         if (j) j.status = msg.status;
+        // A run just started/finished: refresh the run lists so a new run row and
+        // the running highlight appear without a manual refresh (doesn't touch the
+        // daemon-log buffer, unlike loadLogs).
+        if (this.page === "logs") this.refreshRuns();
+        // If the live-tailed run's job just stopped, do a final poll and stop.
+        if (this.runLive && msg.name === this.runName && msg.status !== "running") this.tickRunTail();
       } else if (msg.type === "logTail") {
         this.pushLog(msg.line);
         if (this.page === "logs") this.scrollLog();
@@ -192,6 +203,7 @@ function app() {
       this.$nextTick(() => { const el = this.$refs.logbox; if (el) el.scrollTop = el.scrollHeight; });
     },
     get runningCount() { return this.jobs.filter((j) => j.status === "running").length; },
+    isRunning(name) { return this.jobs.some((j) => j.name === name && j.status === "running"); },
     statusClass(s) { return "badge badge-" + s; },
 
     async startJob(name) {
@@ -442,6 +454,19 @@ function app() {
 
     // ---- settings ---------------------------------------------------------
     async loadPrefs() { try { this.prefs = await api.get("/api/prefs"); } catch (e) { this.toast(e.message, "error"); } },
+    // Send a test mail using the current (possibly unsaved) SMTP form values. The
+    // password rides along only if the admin typed one (write-only); otherwise the
+    // server uses the stored password.
+    async sendTestMail() {
+      const to = (this.testMailTo || "").trim();
+      if (!to) { this.toast("Enter a test recipient", "error"); return; }
+      this.testMailBusy = true;
+      try {
+        await api.post("/api/prefs/test-mail", { recipient: to, smtp: this.prefs.smtp });
+        this.toast("Test mail sent to " + to);
+      } catch (e) { this.toast("Test mail failed: " + e.message, "error"); }
+      finally { this.testMailBusy = false; }
+    },
     async savePrefs() {
       this.busy = true;
       try { await api.put("/api/prefs", this.prefs); this.toast("Settings saved"); }
@@ -452,14 +477,24 @@ function app() {
     // ---- logs -------------------------------------------------------------
     async loadLogs() {
       try {
-        const [runs, main] = await Promise.all([
-          api.get("/api/logs/runs"), api.get("/api/logs/main?lines=200"),
+        const [runs, main, rsync] = await Promise.all([
+          api.get("/api/logs/runs"), api.get("/api/logs/main?lines=200"), api.get("/api/logs/rsync"),
         ]);
         this.runs = runs;
+        this.rsyncRuns = rsync;
         this.logLines = [];
         this.pushLog(main.text);
         this.scrollLog();
       } catch (e) { console.error(e); }
+    },
+    // Refresh only the run lists (not the daemon-log buffer) — used on live status changes.
+    async refreshRuns() {
+      try {
+        const [runs, rsync] = await Promise.all([
+          api.get("/api/logs/runs"), api.get("/api/logs/rsync"),
+        ]);
+        this.runs = runs; this.rsyncRuns = rsync;
+      } catch (e) { /* transient; keep current lists */ }
     },
     pushLog(text) {
       for (const line of String(text).split("\n")) {
@@ -497,9 +532,62 @@ function app() {
       }));
     },
     toggleGroup(name) { this.openGroups[name] = !this.openGroups[name]; },
-    async openRun(file) {
-      try { const r = await api.get("/api/logs/runs/" + encodeURIComponent(file)); this.runText = r.text; this.runOpen = true; }
-      catch (e) { console.error(e); }
+    // Raw per-job rsync (--log-file) logs, grouped like runGroups but keyed on job.
+    get rsyncGroups() {
+      const m = {};
+      for (const r of this.rsyncRuns) (m[r.job] || (m[r.job] = [])).push(r);
+      return Object.keys(m).sort().map((job) => ({
+        name: job,
+        runs: m[job].slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+      }));
+    },
+    toggleRsyncGroup(name) { this.openRsyncGroups[name] = !this.openRsyncGroups[name]; },
+    scrollRun() {
+      this.$nextTick(() => { const el = this.$refs.runbox; if (el) el.scrollTop = el.scrollHeight; });
+    },
+    // Open a backup run's detail log. If the job is currently running, live-tail it
+    // (poll for appended bytes) until it finishes or the modal is closed.
+    async openRun(file, name, live) {
+      this.stopRunTail();
+      this.runFile = file; this.runName = name || ""; this.runOffset = 0; this.runText = "";
+      try {
+        const r = await api.get("/api/logs/runs/" + encodeURIComponent(file));
+        this.runText = r.text; this.runOffset = r.offset || 0;
+      } catch (e) { console.error(e); }
+      this.runOpen = true;
+      if (live) {
+        this.runLive = true;
+        this.scrollRun();
+        this.runTimer = setInterval(() => this.tickRunTail(), 1500);
+      } else {
+        this.runLive = false;
+      }
+    },
+    async tickRunTail() {
+      if (this.runTailBusy || !this.runFile) return;
+      this.runTailBusy = true;
+      try {
+        const r = await api.get("/api/logs/runs/" + encodeURIComponent(this.runFile) + "?offset=" + this.runOffset);
+        if (r.text) { this.runText += r.text; this.scrollRun(); }
+        if (typeof r.offset === "number") this.runOffset = r.offset;
+      } catch (e) { /* file not created yet / rotated: skip this tick */ }
+      finally { this.runTailBusy = false; }
+      if (!this.isRunning(this.runName)) this.stopRunTail();
+    },
+    stopRunTail() {
+      if (this.runTimer) { clearInterval(this.runTimer); this.runTimer = null; }
+      this.runLive = false;
+    },
+    closeRun() { this.stopRunTail(); this.runOpen = false; },
+    // Static viewer for a raw rsync --log-file (reuses the run-log modal, no live tail).
+    async openRsyncRun(job, file) {
+      this.stopRunTail();
+      this.runLive = false; this.runName = ""; this.runFile = "";
+      try {
+        const r = await api.get("/api/logs/rsync/" + encodeURIComponent(job) + "/" + encodeURIComponent(file));
+        this.runText = r.text;
+      } catch (e) { console.error(e); }
+      this.runOpen = true;
     },
 
     // ---- script editor ----------------------------------------------------
@@ -557,9 +645,33 @@ function app() {
       this.pickerFiles = !!opts.files;
       this.pickerPath = ""; this.pickerSel = "";
       this.pickerSort = { key: "name", dir: 1 };
+      this.pickerCreating = false; this.pickerNewName = "";
       this.pickerOpen = true;
       this.pickerLoad("");
       return new Promise((resolve) => { this.pickerResolve = resolve; });
+    },
+    // Create a subfolder in the current picker directory (local or remote SSH), then
+    // reload and pre-select it. Name is restricted to the same safe set the server
+    // enforces (validIdentifier), so a crafted name can't escape the confinement root.
+    async pickerNewFolder() {
+      const name = (this.pickerNewName || "").trim();
+      if (!/^[A-Za-z0-9._-]+$/.test(name) || name === "." || name === "..") {
+        this.toast("Folder name: letters, digits, . _ - only (no '/')", "error"); return;
+      }
+      try {
+        if (this.pickerSshUuid) {
+          await api.post("/api/ssh/" + encodeURIComponent(this.pickerSshUuid) + "/mkdir",
+                         { path: this.pickerPath, name });
+        } else {
+          const body = { root: this.pickerMode, path: this.pickerPath, name };
+          if (this.pickerUuid) body.uuid = this.pickerUuid;
+          await api.post("/api/mkdir", body);
+        }
+        this.toast("Folder created");
+        this.pickerCreating = false; this.pickerNewName = "";
+        await this.pickerLoad(this.pickerPath);
+        this.pickerSel = name;
+      } catch (e) { this.toast("Create folder: " + e.message, "error"); }
     },
     async pickerLoad(path) {
       try {

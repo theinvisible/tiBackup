@@ -176,6 +176,16 @@
               <label>Username<input x-model="prefs.smtp.username"></label>
               <label>Password<input type="password" x-model="prefs.smtp.password" placeholder="(unchanged)" autocomplete="new-password"></label>
             </div>
+            <label>Send a test mail
+              <div class="inline">
+                <input type="email" x-model="testMailTo" placeholder="recipient@example.com" autocomplete="off"
+                       @keydown.enter.prevent="sendTestMail()">
+                <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
+                        :disabled="testMailBusy || !testMailTo" @click="sendTestMail()"
+                        x-text="testMailBusy ? 'Sending…' : 'Send test mail'"></button>
+              </div>
+            </label>
+            <span class="small muted">Uses the SMTP settings above (saving first is not required). Leave the password blank to use the saved one.</span>
           </div>
           <button class="btn btn-primary" style="width:auto" :disabled="busy">Save settings</button>
         </form>
@@ -194,19 +204,48 @@
                 <span class="caret" x-text="openGroups[g.name] ? '▾' : '▸'"></span>
                 <span class="log-group-name" x-text="g.name || '(unnamed)'"></span>
                 <span class="count-chip" x-text="g.runs.length"></span>
+                <span class="badge badge-running" x-show="isRunning(g.name)" style="margin-left:.5rem">running</span>
               </button>
               <table class="table" x-show="openGroups[g.name]" x-transition>
                 <thead><tr><th>Date</th><th></th></tr></thead>
                 <tbody>
-                  <template x-for="r in g.runs" :key="r.file">
+                  <template x-for="(r, idx) in g.runs" :key="r.file">
                     <tr><td class="mono small" x-text="r.date"></td>
-                      <td class="right"><button class="btn btn-ghost btn-sm" @click="openRun(r.file)">View</button></td></tr>
+                      <td class="right">
+                        <span class="badge badge-running" x-show="isRunning(g.name) && idx===0" style="margin-right:.4rem">live</span>
+                        <button class="btn btn-ghost btn-sm" @click="openRun(r.file, g.name, isRunning(g.name) && idx===0)">View</button>
+                      </td></tr>
                   </template>
                 </tbody>
               </table>
             </div>
           </template>
           <p x-show="runGroups.length===0" class="muted center">No run logs yet.</p>
+        </div>
+
+        <!-- Raw rsync logs, grouped by job (present only for jobs with "Save logs" on) -->
+        <div class="card">
+          <div class="card-head"><h2>rsync logs</h2><button class="btn btn-ghost btn-sm" @click="loadLogs()">Refresh</button></div>
+          <template x-for="g in rsyncGroups" :key="g.name">
+            <div class="log-group">
+              <button type="button" class="log-group-head" @click="toggleRsyncGroup(g.name)">
+                <span class="caret" x-text="openRsyncGroups[g.name] ? '▾' : '▸'"></span>
+                <span class="log-group-name" x-text="g.name || '(unnamed)'"></span>
+                <span class="count-chip" x-text="g.runs.length"></span>
+                <span class="badge badge-running" x-show="isRunning(g.name)" style="margin-left:.5rem">running</span>
+              </button>
+              <table class="table" x-show="openRsyncGroups[g.name]" x-transition>
+                <thead><tr><th>Date</th><th></th></tr></thead>
+                <tbody>
+                  <template x-for="r in g.runs" :key="r.file">
+                    <tr><td class="mono small" x-text="r.date"></td>
+                      <td class="right"><button class="btn btn-ghost btn-sm" @click="openRsyncRun(g.name, r.file)">View</button></td></tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </template>
+          <p x-show="rsyncGroups.length===0" class="muted center">No rsync logs yet (enable “Save logs” on a job).</p>
         </div>
 
         <!-- Daemon log with level filter (DEBUG hidden by default) -->
@@ -352,6 +391,7 @@
               <label class="check"><input type="checkbox" x-model="job.start_backup_on_hotplug"> Start on hotplug</label>
               <label class="check"><input type="checkbox" x-model="job.save_log"> Save logs</label>
               <label class="check"><input type="checkbox" x-model="job.compare_via_checksum"> Compare via checksum</label>
+              <label class="check"><input type="checkbox" x-model="job.umount_after_backup"> Unmount drive after backup</label>
             </div>
             <div class="card-sub"><h3>Notification</h3>
               <label class="check"><input type="checkbox" x-model="job.notify"> Notify by e-mail</label>
@@ -562,6 +602,16 @@
               </span>
             </template>
           </div>
+          <button class="btn btn-ghost btn-sm" @click="pickerCreating = !pickerCreating; pickerNewName=''"
+                  title="Create a new folder here">+ New folder</button>
+        </div>
+
+        <div class="fb-newfolder" x-show="pickerCreating" x-transition>
+          <input x-model="pickerNewName" placeholder="New folder name" spellcheck="false"
+                 @keydown.enter="pickerNewFolder()" @keydown.escape="pickerCreating=false; pickerNewName=''"
+                 x-effect="if (pickerCreating) $nextTick(() => $el.focus())">
+          <button class="btn btn-primary btn-sm" style="width:auto" @click="pickerNewFolder()">Create</button>
+          <button class="btn btn-ghost btn-sm" @click="pickerCreating=false; pickerNewName=''">Cancel</button>
         </div>
 
         <div class="fb-body">
@@ -602,10 +652,13 @@
     </div>
 
     <!-- ============ RUN LOG ============ -->
-    <div class="modal-backdrop" x-show="runOpen" @click.self="runOpen=false" x-transition.opacity>
+    <div class="modal-backdrop" x-show="runOpen" @click.self="closeRun()" x-transition.opacity>
       <div class="modal modal-wide" x-show="runOpen" x-transition>
-        <div class="modal-head"><h2>Run log</h2><button class="icon-btn" @click="runOpen=false">✕</button></div>
-        <pre class="logbox modal-log" x-text="runText"></pre>
+        <div class="modal-head">
+          <h2>Run log <span class="badge badge-running" x-show="runLive" style="margin-left:.5rem">live</span></h2>
+          <button class="icon-btn" @click="closeRun()">✕</button>
+        </div>
+        <pre class="logbox modal-log" x-ref="runbox" x-text="runText"></pre>
       </div>
     </div>
 

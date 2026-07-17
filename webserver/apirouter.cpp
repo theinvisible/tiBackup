@@ -51,6 +51,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include "backupmanager.h"
 #include "pbsclient.h"
 #include "sshclient.h"
+#include "tibackupmailer.h"
 #include "obj/pbserver.h"
 #include "obj/sshserver.h"
 #include "webserver/jsonmap.h"
@@ -160,6 +161,80 @@ bool saveScriptConfined(const QString &path, const QString &content)
     out << content;
     f.close();
     return true;
+}
+
+// Resolve the confinement root for a local browse/mkdir request and clamp the
+// requested path inside it. Shared by GET /api/browse (lists canonicalTarget) and
+// POST /api/mkdir (creates a leaf under canonicalTarget) so the two can never drift.
+// canonicalPath() only resolves EXISTING paths, which is fine here: browse lists an
+// existing dir, and mkdir's `path` is the parent dir the client just listed.
+struct BrowseTarget {
+    bool ok = false;
+    QString canonicalBase;
+    QString canonicalTarget;   // clamped to inside canonicalBase
+    QString errMsg;
+    StatusCode errCode = StatusCode::BadRequest;
+};
+
+BrowseTarget resolveBrowseTarget(const QString &root, const QString &uuid, const QString &path)
+{
+    BrowseTarget r;
+    tiConfMain cfg;
+    QString base;
+    if(root == QLatin1String("script"))
+    {
+        base = cfg.getValue("paths/scripts").toString();
+    }
+    else if(root == QLatin1String("dest"))
+    {
+        if(uuid.isEmpty())
+        {
+            r.errMsg = QStringLiteral("uuid required for dest browse");
+            return r;
+        }
+        DeviceDiskPartition part = TiBackupLib::getPartitionByUUID(uuid);
+        TiBackupLib lib;
+        if(!lib.isMounted(&part))
+        {
+            r.errMsg  = QStringLiteral("partition not mounted");
+            r.errCode = StatusCode::Conflict;
+            return r;
+        }
+        base = lib.getMountDir(&part);
+    }
+    else
+    {
+        base = QStringLiteral("/");   // src / keyfile: full filesystem (authenticated admin)
+    }
+
+    if(base.isEmpty())
+    {
+        r.errMsg = QStringLiteral("invalid browse root");
+        return r;
+    }
+
+    const QString canonicalBase = QDir(base).canonicalPath();
+    if(canonicalBase.isEmpty())
+    {
+        r.errMsg  = QStringLiteral("browse root unavailable");
+        r.errCode = StatusCode::NotFound;
+        return r;
+    }
+
+    QString canonicalTarget = QDir(path.isEmpty() ? base : path).canonicalPath();
+    // When base is "/", "base + '/'" would be "//"; use "/" as the prefix so
+    // navigation into subdirectories of root is allowed.
+    const QString baseSep = (canonicalBase == QLatin1String("/"))
+        ? canonicalBase : canonicalBase + QLatin1Char('/');
+    const bool insideBase = !canonicalTarget.isEmpty() &&
+        (canonicalTarget == canonicalBase || canonicalTarget.startsWith(baseSep));
+    if(!insideBase)
+        canonicalTarget = canonicalBase;   // clamp escapes back to the confinement root
+
+    r.ok = true;
+    r.canonicalBase = canonicalBase;
+    r.canonicalTarget = canonicalTarget;
+    return r;
 }
 
 QByteArray buildSessionCookie(const QString &token, bool secure, bool clear = false)
@@ -554,7 +629,11 @@ void ApiRouter::registerReadRoutes()
         return jsonResp(arr);
     });
 
-    // GET /api/logs/runs/<file> -----------------------------------------------
+    // GET /api/logs/runs/<file>[?offset=N] ------------------------------------
+    // Without offset: the file, tail-capped to kMaxLogTailBytes, plus its current
+    // size as "offset". With a valid offset: only the bytes appended since that
+    // position (live tail). offset<0 or offset>size (truncation/rotation) falls back
+    // to a full tail-capped read. Response: {text, offset}.
     m_server->route("/api/logs/runs/<arg>", Method::Get,
         [this](const QString &file, const QHttpServerRequest &req) {
         if(!isAuthed(req)) return unauthorized();
@@ -567,8 +646,84 @@ void ApiRouter::registerReadRoutes()
         if(!f.open(QIODevice::ReadOnly | QIODevice::Text))
             return errResp(QStringLiteral("log not found"), StatusCode::NotFound);
 
+        const qint64 size = f.size();
+        bool hasOffset = false;
+        const qint64 offset = req.query().queryItemValue("offset").toLongLong(&hasOffset);
+
+        QByteArray content;
+        if(hasOffset && offset >= 0 && offset <= size)
+        {
+            f.seek(offset);
+            content = f.readAll();
+        }
+        else
+        {
+            if(size > kMaxLogTailBytes)
+                f.seek(size - kMaxLogTailBytes);
+            content = f.readAll();
+        }
+        f.close();
+
         QJsonObject o;
-        o["text"] = QString::fromUtf8(f.readAll());
+        o["text"]   = QString::fromUtf8(content);
+        o["offset"] = size;
+        return jsonResp(o);
+    });
+
+    // GET /api/logs/rsync -----------------------------------------------------
+    // Lists the per-job raw rsync --log-file logs (<paths/logs>/<job>/*.log, written
+    // when a job has "Save logs" enabled), grouped client-side by job. Excludes the
+    // backup_detail narrative logs (served by /api/logs/runs).
+    m_server->route("/api/logs/rsync", [this](const QHttpServerRequest &req) {
+        if(!isAuthed(req)) return unauthorized();
+        tiConfMain cfg;
+        QDir root(cfg.getValue("paths/logs").toString());
+        QJsonArray arr;
+        const QFileInfoList jobDirs = root.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+        for(const QFileInfo &jobDir : jobDirs)
+        {
+            const QString job = jobDir.fileName();
+            if(job == tibackup_config::backup_detail_folder)
+                continue;
+            QDir jd(jobDir.absoluteFilePath());
+            const QFileInfoList files = jd.entryInfoList(QStringList() << "*.log", QDir::Files, QDir::Name);
+            for(const QFileInfo &fi : files)
+            {
+                const QString base = fi.completeBaseName();   // <yyyyMMdd-hhmmss>_<idx>
+                // Display date from the "<yyyyMMdd-hhmmss>_..." prefix; fall back to mtime.
+                const QDateTime dt = QDateTime::fromString(base.section(QLatin1Char('_'), 0, 0),
+                                                           QStringLiteral("yyyyMMdd-hhmmss"));
+                QJsonObject o;
+                o["job"]  = job;
+                o["file"] = base;
+                o["date"] = (dt.isValid() ? dt : fi.lastModified()).toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+                arr.append(o);
+            }
+        }
+        return jsonResp(arr);
+    });
+
+    // GET /api/logs/rsync/<job>/<file> ----------------------------------------
+    m_server->route("/api/logs/rsync/<arg>/<arg>", Method::Get,
+        [this](const QString &job, const QString &file, const QHttpServerRequest &req) {
+        if(!isAuthed(req)) return unauthorized();
+        if(!validIdentifier(job) || job == tibackup_config::backup_detail_folder)
+            return errResp(QStringLiteral("invalid job"), StatusCode::BadRequest);
+        if(file.contains('/') || file.contains(QStringLiteral("..")))
+            return errResp(QStringLiteral("invalid file"), StatusCode::BadRequest);
+
+        tiConfMain cfg;
+        const QString full = cfg.getValue("paths/logs").toString() + "/" + job + "/" + file + ".log";
+        QFile f(full);
+        if(!f.open(QIODevice::ReadOnly | QIODevice::Text))
+            return errResp(QStringLiteral("log not found"), StatusCode::NotFound);
+        if(f.size() > kMaxLogTailBytes)
+            f.seek(f.size() - kMaxLogTailBytes);
+        const QByteArray content = f.readAll();
+        f.close();
+
+        QJsonObject o;
+        o["text"] = QString::fromUtf8(content);
         return jsonResp(o);
     });
 
@@ -581,43 +736,15 @@ void ApiRouter::registerReadRoutes()
         const QString uuid = q.queryItemValue("uuid");
         const bool files   = q.queryItemValue("files") == QLatin1String("1");
 
-        tiConfMain cfg;
-        QString base;
-        if(root == QLatin1String("script"))
-        {
-            base = cfg.getValue("paths/scripts").toString();
-        }
-        else if(root == QLatin1String("dest"))
-        {
-            if(uuid.isEmpty())
-                return errResp(QStringLiteral("uuid required for dest browse"), StatusCode::BadRequest);
-            DeviceDiskPartition part = TiBackupLib::getPartitionByUUID(uuid);
-            TiBackupLib lib;
-            if(!lib.isMounted(&part))
-                return errResp(QStringLiteral("partition not mounted"), StatusCode::Conflict);
-            base = lib.getMountDir(&part);
-        }
-        else
-        {
-            base = QStringLiteral("/");   // src / keyfile: full filesystem (authenticated admin)
-        }
-
-        if(base.isEmpty())
-            return errResp(QStringLiteral("invalid browse root"), StatusCode::BadRequest);
-
-        const QString canonicalBase = QDir(base).canonicalPath();
-        if(canonicalBase.isEmpty())
-            return errResp(QStringLiteral("browse root unavailable"), StatusCode::NotFound);
-
-        QString canonicalTarget = QDir(path.isEmpty() ? base : path).canonicalPath();
-        // When base is "/", "base + '/'" would be "//"; use "/" as the prefix so
-        // navigation into subdirectories of root is allowed.
+        const BrowseTarget bt = resolveBrowseTarget(root, uuid, path);
+        if(!bt.ok)
+            return errResp(bt.errMsg, bt.errCode);
+        const QString canonicalBase   = bt.canonicalBase;
+        const QString canonicalTarget = bt.canonicalTarget;
+        // When base is "/", "base + '/'" would be "//"; use "/" as the prefix so the
+        // parent-clamp below allows subdirectories of root.
         const QString baseSep = (canonicalBase == QLatin1String("/"))
             ? canonicalBase : canonicalBase + QLatin1Char('/');
-        const bool insideBase = !canonicalTarget.isEmpty() &&
-            (canonicalTarget == canonicalBase || canonicalTarget.startsWith(baseSep));
-        if(!insideBase)
-            canonicalTarget = canonicalBase;   // clamp escapes back to the confinement root
 
         QDir::Filters filt = QDir::Dirs | QDir::NoDotAndDotDot;
         if(files)
@@ -710,6 +837,50 @@ void ApiRouter::registerWriteRoutes()
         }
         cfg.sync();
         return okResp();
+    });
+
+    // POST /api/prefs/test-mail {recipient, smtp:{...}} -----------------------
+    // Sends a test message over the same transport as backup notifications. The
+    // smtp block is optional: supplied fields let the admin test UNSAVED changes;
+    // anything omitted falls back to the stored config. Write-only password: an
+    // empty/omitted password uses the stored (base64) one.
+    m_server->route("/api/prefs/test-mail", Method::Post,
+        [this](const QHttpServerRequest &req) -> QFuture<QHttpServerResponse> {
+        if(!isAuthed(req)) return QtConcurrent::run([]{ return unauthorized(); });
+        if(!csrfOk(req))   return QtConcurrent::run([]{ return forbidden(); });
+
+        const QJsonObject b = parseBody(req);
+        const QString recipient = b["recipient"].toString().trimmed();
+        if(recipient.isEmpty())
+            return QtConcurrent::run([]{ return errResp(QStringLiteral("recipient required"), StatusCode::BadRequest); });
+
+        tiConfMain cfg;
+        const QJsonObject s = b.value("smtp").toObject();
+        tiBackupMailer::Params p;
+        p.server   = s.contains("server")   ? s["server"].toString()  : cfg.getValue("smtp/server").toString();
+        p.auth     = s.contains("auth")     ? s["auth"].toBool()       : cfg.getValue("smtp/auth").toBool();
+        p.username = s.contains("username") ? s["username"].toString() : cfg.getValue("smtp/username").toString();
+        p.from     = s.contains("from")     ? s["from"].toString()     : cfg.getValue("smtp/from").toString();
+        const QString typedPw = s.value("password").toString();
+        p.password = typedPw.isEmpty()
+            ? QString::fromUtf8(QByteArray::fromBase64(cfg.getValue("smtp/password").toString().toLatin1()))
+            : typedPw;
+
+        if(p.server.isEmpty())
+            return QtConcurrent::run([]{ return errResp(QStringLiteral("SMTP server not configured"), StatusCode::BadRequest); });
+
+        // Poco's SMTP send blocks on the network; run it off the main event loop.
+        return QtConcurrent::run([p, recipient]() -> QHttpServerResponse {
+            const tiBackupMailer::Result r = tiBackupMailer::send(
+                p, recipient,
+                QStringLiteral("tiBackup test mail"),
+                QStringLiteral("This is a test message from tiBackup.\n\n"
+                               "If you received it, your SMTP settings are working."));
+            if(!r.ok)
+                return errResp(r.message.isEmpty() ? QStringLiteral("send failed") : r.message,
+                               StatusCode::BadGateway);
+            return okResp();
+        });
     });
 
     // POST /api/jobs (create) -------------------------------------------------
@@ -1080,6 +1251,72 @@ void ApiRouter::registerWriteRoutes()
             o["path"]    = target;
             o["parent"]  = parent;
             o["entries"] = entries;
+            return jsonResp(o);
+        });
+    });
+
+    // POST /api/mkdir {root, uuid, path, name} (create a folder, local) --------
+    m_server->route("/api/mkdir", Method::Post, [this](const QHttpServerRequest &req) {
+        if(!isAuthed(req)) return unauthorized();
+        if(!csrfOk(req))   return forbidden();
+        const QJsonObject b = parseBody(req);
+        const QString root = b["root"].toString();
+        const QString uuid = b["uuid"].toString();
+        const QString path = b["path"].toString();
+        const QString name = b["name"].toString();
+        if(!validIdentifier(name))
+            return errResp(QStringLiteral("invalid folder name"), StatusCode::BadRequest);
+
+        // Same base resolution + confinement as GET /api/browse; canonicalTarget is
+        // the (existing) parent directory the folder is created under.
+        const BrowseTarget bt = resolveBrowseTarget(root, uuid, path);
+        if(!bt.ok)
+            return errResp(bt.errMsg, bt.errCode);
+
+        QDir parent(bt.canonicalTarget);
+        if(parent.exists(name))
+            return errResp(QStringLiteral("a file or folder with that name already exists"),
+                           StatusCode::Conflict);
+        if(!parent.mkdir(name))
+            return errResp(QStringLiteral("could not create folder (permission denied?)"),
+                           StatusCode::InternalServerError);
+
+        QJsonObject o;
+        o["ok"]   = true;
+        o["path"] = bt.canonicalTarget + QLatin1Char('/') + name;
+        return jsonResp(o);
+    });
+
+    // POST /api/ssh/<uuid>/mkdir {path, name} (create a folder, remote) --------
+    m_server->route("/api/ssh/<arg>/mkdir", Method::Post,
+        [this](const QString &uuid, const QHttpServerRequest &req) -> QFuture<QHttpServerResponse> {
+        if(!isAuthed(req)) return QtConcurrent::run([]{ return unauthorized(); });
+        if(!csrfOk(req))   return QtConcurrent::run([]{ return forbidden(); });
+        std::optional<SSHServer> srvOpt = tiConfSSHServers::instance()->getItemByUuid(uuid);
+        if(!srvOpt) return QtConcurrent::run([]{ return errResp(QStringLiteral("server not found"), StatusCode::NotFound); });
+        const SSHServer srv = *srvOpt;   // copy for the worker
+
+        const QJsonObject b = parseBody(req);
+        const QString path = b["path"].toString();
+        const QString name = b["name"].toString();
+        if(!validIdentifier(name))
+            return QtConcurrent::run([]{ return errResp(QStringLiteral("invalid folder name"), StatusCode::BadRequest); });
+
+        // POSIX string math: compose the absolute remote path (no local canonicalisation).
+        QString parent = path.isEmpty() ? QStringLiteral("/") : path;
+        while(parent.size() > 1 && parent.endsWith(QLatin1Char('/')))
+            parent.chop(1);
+        const QString full = (parent == QLatin1String("/")) ? ("/" + name) : (parent + "/" + name);
+
+        // mkdir() blocks on a remote ssh call (up to ~20s); run it off the main thread.
+        return QtConcurrent::run([srv, full]() -> QHttpServerResponse {
+            const sshClient::MkdirResult mr = sshClient::mkdir(srv, full);
+            if(!mr.ok)
+                return errResp(mr.message.isEmpty() ? QStringLiteral("remote mkdir failed") : mr.message,
+                               StatusCode::BadGateway);
+            QJsonObject o;
+            o["ok"]   = true;
+            o["path"] = full;
             return jsonResp(o);
         });
     });
