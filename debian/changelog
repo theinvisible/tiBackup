@@ -1,3 +1,23 @@
+tibackup (0.9.2) unstable; urgency=low
+
+  * E-mail: configurable SMTP port and security mode (none / STARTTLS / SSL-TLS),
+    exposed in Settings and honoured by both notifications and the test-mail path;
+    TLS is provided via Poco NetSSL. Rsync-log attachments on notification mails
+    are preserved. Requires tibackuplib (>= 0.9.2).
+  * Logs tab: long run/rsync logs are no longer truncated to the last 256 KB. The
+    viewer shows a larger preview (2 MB, snapped to a clean line boundary) and,
+    when the log is bigger, a "Load full log" button fetches the whole file
+    (GET /api/logs/.../<file>?full=1); responses flag truncation.
+  * Job editor: the target-drive control is now a proper Mount/Umount toggle that
+    reflects the real mount state - including drives mounted externally / by the
+    OS. POST /api/devices/partition/<uuid>/umount now reports failure (e.g. target
+    busy, HTTP 409) instead of always returning success.
+  * Fix: silence the "'/var/log/tibackup/tibackup.log' already exists and is not a
+    directory" warning emitted by systemd-tmpfiles on upgrade - the log-retention
+    rule no longer globs the held-open tibackup.log file.
+
+ -- Rene Hadler <rene@hadler.me>  Fri, 17 Jul 2026 16:00:00 +0200
+
 tibackup (0.9.1) unstable; urgency=low
 
   * Web UI extensions:
