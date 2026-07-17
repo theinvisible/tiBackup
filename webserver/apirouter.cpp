@@ -32,6 +32,8 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QtConcurrent>   // run blocking PBS/SSH network calls off the main event loop
+#include <QFuture>
 #include <QUrlQuery>
 #include <QUrl>
 #include <QDir>
@@ -86,6 +88,15 @@ bool validIdentifier(const QString &s)
     if(!re.match(s).hasMatch())
         return false;
     return s != QLatin1String(".") && s != QLatin1String("..");
+}
+
+// PBS backup ids are "<type>/<id>" (e.g. vm/101, ct/100, host/srv1). They become
+// path components and command arguments in the PBS packaging path, so constrain
+// them to known types and safe characters and reject anything else at save time.
+bool validPbsBackupId(const QString &s)
+{
+    static const QRegularExpression re(QStringLiteral("^(vm|ct|host)/[A-Za-z0-9._-]+$"));
+    return re.match(s).hasMatch();
 }
 
 // PBServer uuids (QUuid without braces) likewise become file names on disk.
@@ -683,6 +694,11 @@ void ApiRouter::registerWriteRoutes()
         if(!validIdentifier(job.name))
             return errResp(QStringLiteral("invalid job name (allowed: letters, digits, . _ -)"),
                            StatusCode::BadRequest);
+        if(job.pbs)
+            for(const QString &id : job.pbs_backup_ids)
+                if(!validPbsBackupId(id))
+                    return errResp(QStringLiteral("invalid PBS backup id (expected vm/<id>, ct/<id> or host/<id>)"),
+                                   StatusCode::BadRequest);
         tiConfBackupJobs jobs;
         if(jobs.getJobByName(job.name))
             return errResp(QStringLiteral("a job with that name already exists"), StatusCode::Conflict);
@@ -698,6 +714,11 @@ void ApiRouter::registerWriteRoutes()
         if(!validIdentifier(name))
             return errResp(QStringLiteral("invalid job name"), StatusCode::BadRequest);
         tiBackupJob job = jsonmap::jobFromJson(parseBody(req));
+        if(job.pbs)
+            for(const QString &id : job.pbs_backup_ids)
+                if(!validPbsBackupId(id))
+                    return errResp(QStringLiteral("invalid PBS backup id (expected vm/<id>, ct/<id> or host/<id>)"),
+                                   StatusCode::BadRequest);
         tiConfBackupJobs jobs;
         if(!jobs.getJobByName(name))
             return errResp(QStringLiteral("job not found"), StatusCode::NotFound);
@@ -790,9 +811,10 @@ void ApiRouter::registerWriteRoutes()
     });
 
     // POST /api/pbs/test ------------------------------------------------------
-    m_server->route("/api/pbs/test", Method::Post, [this](const QHttpServerRequest &req) {
-        if(!isAuthed(req)) return unauthorized();
-        if(!csrfOk(req))   return forbidden();
+    m_server->route("/api/pbs/test", Method::Post,
+        [this](const QHttpServerRequest &req) -> QFuture<QHttpServerResponse> {
+        if(!isAuthed(req)) return QtConcurrent::run([]{ return unauthorized(); });
+        if(!csrfOk(req))   return QtConcurrent::run([]{ return forbidden(); });
         const QJsonObject b = parseBody(req);
         QString host, user, pass, expectedFp;
         int port = 8007;
@@ -805,7 +827,7 @@ void ApiRouter::registerWriteRoutes()
         if(!uuid.isEmpty())
         {
             std::optional<PBServer> s = tiConfPBServers::instance()->getItemByUuid(uuid);
-            if(!s) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
+            if(!s) return QtConcurrent::run([]{ return errResp(QStringLiteral("server not found"), StatusCode::NotFound); });
             host = s->host; port = s->port; user = s->username; pass = s->password;
             expectedFp = s->fingerprint;
         }
@@ -817,63 +839,74 @@ void ApiRouter::registerWriteRoutes()
             pass = b["password"].toString();
             expectedFp = b["fingerprint"].toString();
         }
-        pbsClient *c = pbsClient::instanceUnique();
-        // Capture mode fetches the cert even when nothing is pinned yet, so the UI
-        // can show the fingerprint for the admin to pin (trust on first use). If a
-        // fingerprint is already provided we also verify against it.
-        c->setCaptureMode(true);
-        if(!expectedFp.isEmpty())
-            c->setExpectedFingerprint(expectedFp);
-        const HttpStatus::Code code = c->auth(host, port, user, pass);
-        const QString presented = c->capturedFingerprint();
-        c->deleteLater();
-        QJsonObject o;
-        o["ok"]          = HttpStatus::isSuccessful(code);
-        o["status"]      = static_cast<int>(code);
-        o["fingerprint"] = presented;
-        if(!expectedFp.isEmpty())
-            o["verified"] = !presented.isEmpty() && pbsClient::fingerprintMatches(presented, expectedFp);
-        return jsonResp(o);
+        // The PBS auth blocks on a nested event loop; run it off the main thread and
+        // return a QFuture so the scheduler/other requests keep being served. Capture
+        // only values (never req/this): the request may be gone before this runs.
+        return QtConcurrent::run([host, port, user, pass, expectedFp]() -> QHttpServerResponse {
+            pbsClient *c = pbsClient::instanceUnique();
+            // Capture mode fetches the cert even when nothing is pinned yet, so the UI
+            // can show the fingerprint for the admin to pin (trust on first use). If a
+            // fingerprint is already provided we also verify against it.
+            c->setCaptureMode(true);
+            if(!expectedFp.isEmpty())
+                c->setExpectedFingerprint(expectedFp);
+            const HttpStatus::Code code = c->auth(host, port, user, pass);
+            const QString presented = c->capturedFingerprint();
+            delete c;   // deterministic teardown (no persistent event loop on this pool thread)
+            QJsonObject o;
+            o["ok"]          = HttpStatus::isSuccessful(code);
+            o["status"]      = static_cast<int>(code);
+            o["fingerprint"] = presented;
+            if(!expectedFp.isEmpty())
+                o["verified"] = !presented.isEmpty() && pbsClient::fingerprintMatches(presented, expectedFp);
+            return jsonResp(o);
+        });
     });
 
     // GET /api/pbs/<uuid>/datastores -----------------------------------------
     m_server->route("/api/pbs/<arg>/datastores", Method::Get,
-        [this](const QString &uuid, const QHttpServerRequest &req) {
-        if(!isAuthed(req)) return unauthorized();
+        [this](const QString &uuid, const QHttpServerRequest &req) -> QFuture<QHttpServerResponse> {
+        if(!isAuthed(req)) return QtConcurrent::run([]{ return unauthorized(); });
         std::optional<PBServer> s = tiConfPBServers::instance()->getItemByUuid(uuid);
-        if(!s) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
-        pbsClient *c = pbsClient::instanceUnique();
-        c->setExpectedFingerprint(s->fingerprint);
-        if(!HttpStatus::isSuccessful(c->auth(s->host, s->port, s->username, s->password)))
-        {
-            c->deleteLater();
-            return errResp(QStringLiteral("PBS authentication failed"), StatusCode::BadGateway);
-        }
-        const pbsClient::HttpResponse resp = c->getDatastores();
-        c->deleteLater();
-        if(!HttpStatus::isSuccessful(resp.status))
-            return errResp(QStringLiteral("PBS request failed"), StatusCode::BadGateway);
-        return jsonResp(resp.data.object().value("data").toArray());
+        if(!s) return QtConcurrent::run([]{ return errResp(QStringLiteral("server not found"), StatusCode::NotFound); });
+        const PBServer pb = *s;   // copy for the worker; never dereference the singleton off-thread
+        return QtConcurrent::run([pb]() -> QHttpServerResponse {
+            pbsClient *c = pbsClient::instanceUnique();
+            c->setExpectedFingerprint(pb.fingerprint);
+            if(!HttpStatus::isSuccessful(c->auth(pb.host, pb.port, pb.username, pb.password)))
+            {
+                delete c;
+                return errResp(QStringLiteral("PBS authentication failed"), StatusCode::BadGateway);
+            }
+            const pbsClient::HttpResponse resp = c->getDatastores();
+            delete c;
+            if(!HttpStatus::isSuccessful(resp.status))
+                return errResp(QStringLiteral("PBS request failed"), StatusCode::BadGateway);
+            return jsonResp(resp.data.object().value("data").toArray());
+        });
     });
 
     // GET /api/pbs/<uuid>/datastores/<ds>/groups -----------------------------
     m_server->route("/api/pbs/<arg>/datastores/<arg>/groups", Method::Get,
-        [this](const QString &uuid, const QString &datastore, const QHttpServerRequest &req) {
-        if(!isAuthed(req)) return unauthorized();
+        [this](const QString &uuid, const QString &datastore, const QHttpServerRequest &req) -> QFuture<QHttpServerResponse> {
+        if(!isAuthed(req)) return QtConcurrent::run([]{ return unauthorized(); });
         std::optional<PBServer> s = tiConfPBServers::instance()->getItemByUuid(uuid);
-        if(!s) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
-        pbsClient *c = pbsClient::instanceUnique();
-        c->setExpectedFingerprint(s->fingerprint);
-        if(!HttpStatus::isSuccessful(c->auth(s->host, s->port, s->username, s->password)))
-        {
-            c->deleteLater();
-            return errResp(QStringLiteral("PBS authentication failed"), StatusCode::BadGateway);
-        }
-        const pbsClient::HttpResponse resp = c->getDatastoreGroups(datastore);
-        c->deleteLater();
-        if(!HttpStatus::isSuccessful(resp.status))
-            return errResp(QStringLiteral("PBS request failed"), StatusCode::BadGateway);
-        return jsonResp(resp.data.object().value("data").toArray());
+        if(!s) return QtConcurrent::run([]{ return errResp(QStringLiteral("server not found"), StatusCode::NotFound); });
+        const PBServer pb = *s;
+        return QtConcurrent::run([pb, datastore]() -> QHttpServerResponse {
+            pbsClient *c = pbsClient::instanceUnique();
+            c->setExpectedFingerprint(pb.fingerprint);
+            if(!HttpStatus::isSuccessful(c->auth(pb.host, pb.port, pb.username, pb.password)))
+            {
+                delete c;
+                return errResp(QStringLiteral("PBS authentication failed"), StatusCode::BadGateway);
+            }
+            const pbsClient::HttpResponse resp = c->getDatastoreGroups(datastore);
+            delete c;
+            if(!HttpStatus::isSuccessful(resp.status))
+                return errResp(QStringLiteral("PBS request failed"), StatusCode::BadGateway);
+            return jsonResp(resp.data.object().value("data").toArray());
+        });
     });
 
     // POST /api/ssh (create) --------------------------------------------------
@@ -928,84 +961,93 @@ void ApiRouter::registerWriteRoutes()
     // Tests public-key auth and captures the host key. For an existing server
     // (uuid set) the freshly captured key is pinned immediately; for a new one
     // the key + fingerprint are returned so the client can save them.
-    m_server->route("/api/ssh/test", Method::Post, [this](const QHttpServerRequest &req) {
-        if(!isAuthed(req)) return unauthorized();
-        if(!csrfOk(req))   return forbidden();
+    m_server->route("/api/ssh/test", Method::Post,
+        [this](const QHttpServerRequest &req) -> QFuture<QHttpServerResponse> {
+        if(!isAuthed(req)) return QtConcurrent::run([]{ return unauthorized(); });
+        if(!csrfOk(req))   return QtConcurrent::run([]{ return forbidden(); });
         const QJsonObject b = parseBody(req);
         SSHServer srv;
         const QString uuid = b.value("uuid").toString();
         if(!uuid.isEmpty())
         {
             std::optional<SSHServer> s = tiConfSSHServers::instance()->getItemByUuid(uuid);
-            if(!s) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
+            if(!s) return QtConcurrent::run([]{ return errResp(QStringLiteral("server not found"), StatusCode::NotFound); });
             srv = *s;
         }
         else
         {
             srv = jsonmap::sshServerFromJson(b);
         }
-        const sshClient::TestResult tr = sshClient::test(srv);
-        QJsonObject o;
-        o["ok"]          = tr.ok;
-        o["fingerprint"] = tr.fingerprint;
-        o["hostkey"]     = tr.hostkey;
-        if(!tr.ok)
-            o["message"] = tr.message;
-        if(tr.ok && !uuid.isEmpty() && !tr.hostkey.isEmpty())
-        {
-            srv.uuid = uuid;
-            srv.hostkey = tr.hostkey;
-            tiConfSSHServers::instance()->saveItem(srv);
-        }
-        return jsonResp(o);
+        // sshClient::test() blocks on ssh-keyscan/ssh (up to ~20s each) via
+        // QProcess::waitForFinished, which would freeze the main loop; run it off-thread.
+        return QtConcurrent::run([srv, uuid]() mutable -> QHttpServerResponse {
+            const sshClient::TestResult tr = sshClient::test(srv);
+            QJsonObject o;
+            o["ok"]          = tr.ok;
+            o["fingerprint"] = tr.fingerprint;
+            o["hostkey"]     = tr.hostkey;
+            if(!tr.ok)
+                o["message"] = tr.message;
+            if(tr.ok && !uuid.isEmpty() && !tr.hostkey.isEmpty())
+            {
+                srv.uuid = uuid;
+                srv.hostkey = tr.hostkey;
+                tiConfSSHServers::instance()->saveItem(srv);   // config singleton is mutex-protected (Prio-1)
+            }
+            return jsonResp(o);
+        });
     });
 
     // GET /api/ssh/<uuid>/browse?path= (remote directory listing over SSH) -----
     // Returns the same {base, path, parent, entries} shape as /api/browse so the
     // frontend path picker can render it unchanged.
     m_server->route("/api/ssh/<arg>/browse", Method::Get,
-        [this](const QString &uuid, const QHttpServerRequest &req) {
-        if(!isAuthed(req)) return unauthorized();
-        std::optional<SSHServer> srv = tiConfSSHServers::instance()->getItemByUuid(uuid);
-        if(!srv) return errResp(QStringLiteral("server not found"), StatusCode::NotFound);
+        [this](const QString &uuid, const QHttpServerRequest &req) -> QFuture<QHttpServerResponse> {
+        if(!isAuthed(req)) return QtConcurrent::run([]{ return unauthorized(); });
+        std::optional<SSHServer> srvOpt = tiConfSSHServers::instance()->getItemByUuid(uuid);
+        if(!srvOpt) return QtConcurrent::run([]{ return errResp(QStringLiteral("server not found"), StatusCode::NotFound); });
+        const SSHServer srv = *srvOpt;   // copy for the worker
 
         const QString path = req.query().queryItemValue("path", QUrl::FullyDecoded);
         const QString target = path.isEmpty() ? QStringLiteral("/") : path;
 
-        const sshClient::ListResult lr = sshClient::listDir(*srv, target);
-        if(!lr.ok)
-            return errResp(lr.message.isEmpty() ? QStringLiteral("remote listing failed") : lr.message,
-                           StatusCode::BadGateway);
+        // listDir() blocks on a remote ssh ls (up to ~20s); run it off the main thread.
+        return QtConcurrent::run([srv, target]() -> QHttpServerResponse {
+            const sshClient::ListResult lr = sshClient::listDir(srv, target);
+            if(!lr.ok)
+                return errResp(lr.message.isEmpty() ? QStringLiteral("remote listing failed") : lr.message,
+                               StatusCode::BadGateway);
 
-        QJsonArray entries;
-        for(const sshClient::DirEntry &e : lr.entries)
-        {
-            QJsonObject je;
-            je["name"]  = e.name;
-            je["isDir"] = e.isDir;
-            je["size"]  = static_cast<qint64>(e.size);
-            je["mtime"] = static_cast<qint64>(e.mtime);
-            entries.append(je);
-        }
+            QJsonArray entries;
+            for(const sshClient::DirEntry &e : lr.entries)
+            {
+                QJsonObject je;
+                je["name"]  = e.name;
+                je["isDir"] = e.isDir;
+                je["size"]  = static_cast<qint64>(e.size);
+                je["mtime"] = static_cast<qint64>(e.mtime);
+                entries.append(je);
+            }
 
-        // POSIX string math: the remote path has no local canonicalisation.
-        QString parent;
-        if(target == QLatin1String("/"))
-        {
-            parent = QStringLiteral("/");
-        }
-        else
-        {
-            const int idx = target.lastIndexOf('/');
-            parent = (idx <= 0) ? QStringLiteral("/") : target.left(idx);
-        }
+            // POSIX string math: the remote path has no local canonicalisation.
+            QString parent;
+            if(target == QLatin1String("/"))
+            {
+                parent = QStringLiteral("/");
+            }
+            else
+            {
+                const int idx = target.lastIndexOf('/');
+                parent = (idx <= 0) ? QStringLiteral("/") : target.left(idx);
+            }
 
-        QJsonObject o;
-        o["base"]    = QStringLiteral("/");
-        o["path"]    = target;
-        o["parent"]  = parent;
-        o["entries"] = entries;
-        return jsonResp(o);
+            QJsonObject o;
+            o["base"]    = QStringLiteral("/");
+            o["path"]    = target;
+            o["parent"]  = parent;
+            o["entries"] = entries;
+            return jsonResp(o);
+        });
     });
 
     // PUT /api/scripts {path, content} ---------------------------------------

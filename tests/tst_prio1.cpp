@@ -212,6 +212,42 @@ private slots:
     }
 };
 
+// ---------------------------------------------------------------------------
+// PBS backup-id validation contract (Prio-2 Fix B). Mirrors validPbsBackupId()
+// in webserver/apirouter.cpp, which is a file-local helper (not linkable here).
+// The live endpoint is exercised end-to-end in test/e2e-prio2.py; this locks the
+// accept/reject contract as a fast, root-free tripwire against regex mistakes.
+// ---------------------------------------------------------------------------
+class PbsBackupIdTest : public QObject
+{
+    Q_OBJECT
+private:
+    static bool valid(const QString &s)
+    {
+        static const QRegularExpression re(QStringLiteral("^(vm|ct|host)/[A-Za-z0-9._-]+$"));
+        return re.match(s).hasMatch();
+    }
+private slots:
+    void accepts()
+    {
+        QVERIFY(valid("vm/101"));
+        QVERIFY(valid("ct/100"));
+        QVERIFY(valid("host/srv1"));
+        QVERIFY(valid("vm/1.2_3-4"));
+    }
+    void rejects()
+    {
+        QVERIFY(!valid(""));            // empty
+        QVERIFY(!valid("vm"));          // no slash -> would crash the split() indexer
+        QVERIFY(!valid("vm/"));         // empty id
+        QVERIFY(!valid("/101"));        // empty type
+        QVERIFY(!valid("kvm/1"));       // unknown type
+        QVERIFY(!valid("VM/1"));        // wrong case
+        QVERIFY(!valid("host/a/b"));    // extra slash (id may not contain '/')
+        QVERIFY(!valid("vm/1;rm -rf")); // shell metacharacters / spaces
+    }
+};
+
 int main(int argc, char *argv[])
 {
     // Redirect the whole config tree into a throwaway dir BEFORE any tiConfMain
@@ -222,9 +258,10 @@ int main(int argc, char *argv[])
     QCoreApplication app(argc, argv);
 
     int status = 0;
-    { TiConfTest t;       status |= QTest::qExec(&t, argc, argv); }
-    { FingerprintTest t;  status |= QTest::qExec(&t, argc, argv); }
-    { PasswordHashTest t; status |= QTest::qExec(&t, argc, argv); }
+    { TiConfTest t;        status |= QTest::qExec(&t, argc, argv); }
+    { FingerprintTest t;   status |= QTest::qExec(&t, argc, argv); }
+    { PasswordHashTest t;  status |= QTest::qExec(&t, argc, argv); }
+    { PbsBackupIdTest t;   status |= QTest::qExec(&t, argc, argv); }
     return status;
 }
 

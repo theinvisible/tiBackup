@@ -10,7 +10,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Headless server runtime: Core + Network + embedded web UI (HttpServer + WebSockets), no GUI.
-find_package(Qt6 REQUIRED COMPONENTS Core Network HttpServer WebSockets)
+# Concurrent lets the blocking PBS/SSH API handlers run off the main event loop
+# (QtConcurrent::run -> QFuture<QHttpServerResponse>); it ships inside qt6-base-dev.
+find_package(Qt6 REQUIRED COMPONENTS Core Network HttpServer WebSockets Concurrent)
 
 qt_standard_project_setup()
 
@@ -66,6 +68,7 @@ target_link_libraries(tiBackup PRIVATE
     Qt6::Network
     Qt6::HttpServer
     Qt6::WebSockets
+    Qt6::Concurrent
     tiBackupLib::tiBackupLib
 )
 
