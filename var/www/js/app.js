@@ -65,7 +65,7 @@ function app() {
 
     // job editor
     editorOpen: false, editorNew: false, editorTab: "general", editorOrigName: "",
-    job: blankJob(), editorDevname: "", editorMountDir: "", partInfo: null,
+    job: blankJob(), editorDevname: "", editorMountDir: "", partInfo: null, mountBusy: false,
     folderSource: "", folderDest: "", folderEditIndex: -1,
 
     // pbs
@@ -271,20 +271,36 @@ function app() {
       this.job.device = d ? (d.vendor + " " + d.model + " (" + d.devname + ")").trim() : "";
     },
     onPartitionChange() { this.editorMountDir = ""; this.refreshPartInfo(); },
+    // partInfo (from GET /api/devices/partition/<uuid>) is the single source of truth
+    // for mount state; editorMountDir is kept in lockstep with it (used for dest gating
+    // + %MNTBACKUPDIR% rewriting). Detects external mounts too (backend reads /proc/mounts).
     async refreshPartInfo() {
-      if (!this.job.partition_uuid) { this.partInfo = null; return; }
+      if (!this.job.partition_uuid) { this.partInfo = null; this.editorMountDir = ""; return; }
       try {
         this.partInfo = await api.get("/api/devices/partition/" + encodeURIComponent(this.job.partition_uuid));
-        if (this.partInfo.mounted) this.editorMountDir = this.partInfo.mountDir;
-      } catch (e) { this.partInfo = null; }
+        this.editorMountDir = this.partInfo.mounted ? this.partInfo.mountDir : "";
+      } catch (e) { this.partInfo = null; this.editorMountDir = ""; }
     },
     async mountForBrowse() {
       if (!this.job.partition_uuid) { this.toast("Select a partition first", "error"); return; }
+      this.mountBusy = true;
       try {
-        const r = await api.post("/api/devices/partition/" + encodeURIComponent(this.job.partition_uuid) + "/mount",
+        await api.post("/api/devices/partition/" + encodeURIComponent(this.job.partition_uuid) + "/mount",
           { luksType: this.job.encLUKSType, luksFilePath: this.job.encLUKSFilePath });
-        this.editorMountDir = r.mountDir; this.toast("Mounted at " + r.mountDir); this.refreshPartInfo();
+        await this.refreshPartInfo();
+        this.toast(this.editorMountDir ? "Mounted at " + this.editorMountDir : "Mounted");
       } catch (e) { this.toast("Mount failed: " + e.message, "error"); }
+      finally { this.mountBusy = false; }
+    },
+    async umountForBrowse() {
+      if (!this.job.partition_uuid) return;
+      this.mountBusy = true;
+      try {
+        await api.post("/api/devices/partition/" + encodeURIComponent(this.job.partition_uuid) + "/umount");
+        await this.refreshPartInfo();
+        this.toast("Unmounted");
+      } catch (e) { this.toast("Unmount failed: " + e.message, "error"); await this.refreshPartInfo(); }
+      finally { this.mountBusy = false; }
     },
     get folderEditing() { return this.folderEditIndex >= 0; },
     addFolder() {

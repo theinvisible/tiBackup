@@ -1390,7 +1390,8 @@ void ApiRouter::registerWriteRoutes()
         if(!csrfOk(req))   return forbidden();
         DeviceDiskPartition part = TiBackupLib::getPartitionByUUID(uuid);
         TiBackupLib lib;
-        lib.umountPartition(&part);
+        if(!lib.umountPartition(&part))
+            return errResp(QStringLiteral("could not unmount (target busy?)"), StatusCode::Conflict);
         return okResp();
     });
 }

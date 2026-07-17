@@ -319,11 +319,16 @@
             <p class="small muted" x-show="!editorDevname && job.partition_uuid">Stored partition UUID: <span class="mono" x-text="job.partition_uuid"></span> (device not currently attached)</p>
             <p class="small" x-show="selectedPartType">Filesystem: <span class="mono" x-text="selectedPartType"></span></p>
             <div class="inline">
-              <button type="button" class="btn btn-ghost btn-sm" @click="mountForBrowse()" :disabled="!job.partition_uuid">Mount</button>
-              <span class="small" x-show="partInfo">
-                <span x-show="partInfo && partInfo.mounted" class="ok-text">mounted at <span class="mono" x-text="editorMountDir"></span></span>
-                <span x-show="partInfo && !partInfo.mounted" class="muted">not mounted</span>
-              </span>
+              <button type="button" class="btn btn-ghost btn-sm"
+                      x-show="!(partInfo && partInfo.mounted)"
+                      :disabled="!job.partition_uuid || mountBusy"
+                      @click="mountForBrowse()" x-text="mountBusy ? 'Mounting…' : 'Mount'"></button>
+              <button type="button" class="btn btn-ghost btn-sm"
+                      x-show="partInfo && partInfo.mounted"
+                      :disabled="mountBusy"
+                      @click="umountForBrowse()" x-text="mountBusy ? 'Unmounting…' : 'Umount'"></button>
+              <span class="small ok-text" x-show="partInfo && partInfo.mounted">mounted at <span class="mono" x-text="editorMountDir"></span></span>
+              <span class="small muted" x-show="partInfo && !partInfo.mounted">not mounted</span>
             </div>
           </div>
 
