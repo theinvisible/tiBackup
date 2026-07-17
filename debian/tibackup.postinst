@@ -3,6 +3,16 @@ set -e
 
 case "$1" in
     configure)
+        # Unprivileged system user that pre/post-backup scripts run as. The daemon
+        # runs as root but drops to this user before executing a job script, so a
+        # web-authored script is not root-equivalent; root actions a script needs are
+        # granted explicitly via /etc/sudoers.d/tibackup-scripts. Idempotent (safe on
+        # upgrades); the user is intentionally kept on purge to avoid orphaned files.
+        if ! getent passwd tibackup >/dev/null; then
+            adduser --system --group --no-create-home --home /nonexistent \
+                    --shell /usr/sbin/nologin --gecos "tiBackup script runner" tibackup
+        fi
+
         # Generate a self-signed TLS certificate for the web UI (Proxmox-style).
         # Idempotent: keeps an existing cert, so this is safe on every upgrade too.
         # Runs BEFORE the debhelper-generated snippet (which starts the daemon) so the cert already

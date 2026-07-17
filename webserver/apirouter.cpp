@@ -139,16 +139,13 @@ QHttpServerResponse okResp()
     return jsonResp(o);
 }
 
-// Confine a path to the configured paths/scripts directory (ported from the old
-// IPC daemon's saveScriptConfined). Returns the canonical target or empty on reject.
+// Confine a path to the configured paths/scripts directory. Delegates to the shared
+// tiBackupLib resolver so the daemon (script read/write + job-save validation) and the
+// backup worker (execution) agree, and so both are symlink-safe (canonical when the
+// target exists, lexical containment when it doesn't yet). Empty = reject.
 QString confineToScripts(const QString &path)
 {
-    tiConfMain cfg;
-    const QString base = QDir::cleanPath(QDir(cfg.getValue("paths/scripts").toString()).absolutePath());
-    const QString target = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
-    if(base.isEmpty() || (target != base && !target.startsWith(base + QLatin1Char('/'))))
-        return QString();
-    return target;
+    return TiBackupLib::confineToScriptsDir(path);
 }
 
 bool saveScriptConfined(const QString &path, const QString &content)
@@ -666,9 +663,13 @@ void ApiRouter::registerWriteRoutes()
         }
         if(b.contains("paths"))
         {
+            // NOTE: "scripts" is deliberately NOT settable here. It is the confinement
+            // root for pre/post-backup scripts; letting the web layer move it would let
+            // a session redirect script writes/reads to an arbitrary directory. The
+            // scripts directory can only be changed by a root admin in main.conf.
             const QJsonObject p = b["paths"].toObject();
             for(const QString &k : {QStringLiteral("backupjobs"), QStringLiteral("pbservers"),
-                                    QStringLiteral("logs"), QStringLiteral("scripts")})
+                                    QStringLiteral("logs")})
                 if(p.contains(k))
                     cfg.setValue("paths/" + k, p[k].toString());
         }
@@ -699,6 +700,10 @@ void ApiRouter::registerWriteRoutes()
                 if(!validPbsBackupId(id))
                     return errResp(QStringLiteral("invalid PBS backup id (expected vm/<id>, ct/<id> or host/<id>)"),
                                    StatusCode::BadRequest);
+        for(const QString &s : { job.scriptBeforeBackup, job.scriptAfterBackup })
+            if(!s.isEmpty() && confineToScripts(s).isEmpty())
+                return errResp(QStringLiteral("script path must be inside the configured scripts directory"),
+                               StatusCode::BadRequest);
         tiConfBackupJobs jobs;
         if(jobs.getJobByName(job.name))
             return errResp(QStringLiteral("a job with that name already exists"), StatusCode::Conflict);
@@ -719,6 +724,10 @@ void ApiRouter::registerWriteRoutes()
                 if(!validPbsBackupId(id))
                     return errResp(QStringLiteral("invalid PBS backup id (expected vm/<id>, ct/<id> or host/<id>)"),
                                    StatusCode::BadRequest);
+        for(const QString &s : { job.scriptBeforeBackup, job.scriptAfterBackup })
+            if(!s.isEmpty() && confineToScripts(s).isEmpty())
+                return errResp(QStringLiteral("script path must be inside the configured scripts directory"),
+                               StatusCode::BadRequest);
         tiConfBackupJobs jobs;
         if(!jobs.getJobByName(name))
             return errResp(QStringLiteral("job not found"), StatusCode::NotFound);

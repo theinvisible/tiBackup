@@ -12,6 +12,9 @@ override_dh_auto_install:
 	# Self-signed web-cert generator, shared by the postinst and
 	# `tiBackup --regenerate-web-cert`.
 	install -D -m 0755 scripts/gen-web-cert.sh debian/tibackup/usr/lib/tibackup/gen-web-cert
+	# Commented sudoers template for the unprivileged script-runner user (0440,
+	# root-owned as sudoers requires). Ships with no active rules.
+	install -D -m 0440 etc/sudoers.d/tibackup-scripts debian/tibackup/etc/sudoers.d/tibackup-scripts
 
 # The tibackupd systemd unit ships as debian/tibackup.tibackupd.service. Because
 # the unit name (tibackupd) differs from the package name (tibackup), dh_installsystemd

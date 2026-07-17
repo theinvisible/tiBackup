@@ -162,7 +162,7 @@
             <label>Backup job configs<div class="inline"><input x-model="prefs.paths.backupjobs"><button type="button" class="btn btn-ghost btn-sm" @click="pickPrefPath('backupjobs')">Browse</button></div></label>
             <label>PBS server configs<div class="inline"><input x-model="prefs.paths.pbservers"><button type="button" class="btn btn-ghost btn-sm" @click="pickPrefPath('pbservers')">Browse</button></div></label>
             <label>Logs<div class="inline"><input x-model="prefs.paths.logs"><button type="button" class="btn btn-ghost btn-sm" @click="pickPrefPath('logs')">Browse</button></div></label>
-            <label>Scripts<div class="inline"><input x-model="prefs.paths.scripts"><button type="button" class="btn btn-ghost btn-sm" @click="pickPrefPath('scripts')">Browse</button></div></label>
+            <label>Scripts<div class="inline"><input x-model="prefs.paths.scripts" readonly></div><span class="small muted">fixed; change only in main.conf (pre/post scripts are confined here)</span></label>
           </div>
           <div class="card">
             <div class="card-head"><h2>E-mail (SMTP)</h2></div>
@@ -365,8 +365,9 @@
               </div>
             </div>
             <div class="card-sub"><h3>Scripts</h3>
-              <div class="inline"><input placeholder="Before-backup script path" x-model="job.scriptBeforeBackup"><button type="button" class="btn btn-ghost btn-sm" @click="openScript('scriptBeforeBackup')">Edit</button></div>
-              <div class="inline"><input placeholder="After-backup script path" x-model="job.scriptAfterBackup"><button type="button" class="btn btn-ghost btn-sm" @click="openScript('scriptAfterBackup')">Edit</button></div>
+              <div class="inline"><input placeholder="Before-backup script (in scripts dir)" x-model="job.scriptBeforeBackup" readonly><button type="button" class="btn btn-ghost btn-sm" @click="chooseScript('scriptBeforeBackup')">Choose</button><button type="button" class="btn btn-ghost btn-sm" @click="openScript('scriptBeforeBackup')">Edit</button></div>
+              <div class="inline"><input placeholder="After-backup script (in scripts dir)" x-model="job.scriptAfterBackup" readonly><button type="button" class="btn btn-ghost btn-sm" @click="chooseScript('scriptAfterBackup')">Choose</button><button type="button" class="btn btn-ghost btn-sm" @click="openScript('scriptAfterBackup')">Edit</button></div>
+              <span class="small muted">scripts run as an unprivileged user; use sudo for root actions</span>
             </div>
           </div>
 
@@ -531,7 +532,7 @@
       <div class="modal modal-wide" x-show="scriptOpen" x-transition>
         <div class="modal-head"><h2>Script editor</h2><button class="icon-btn" @click="scriptOpen=false">✕</button></div>
         <div class="modal-body">
-          <label>Script path<div class="inline"><input x-model="scriptPath"><button type="button" class="btn btn-ghost btn-sm" @click="pickScriptPath()">Browse</button></div></label>
+          <label>Script file<div class="inline"><span class="small muted" x-text="scriptDir + '/'"></span><input x-model="scriptName" placeholder="script-name.sh" spellcheck="false"></div><span class="small muted">stored in the fixed scripts directory; only the file name is editable</span></label>
           <textarea class="code" rows="14" x-model="scriptContent" spellcheck="false"></textarea>
           <div class="inline"><button type="button" class="btn btn-ghost btn-sm" @click="insertMntVar()">Insert %MNTBACKUPDIR%</button><button type="button" class="btn btn-ghost btn-sm" @click="copyMntVar()">Copy</button><span class="small muted">replaced by the mount path at runtime</span></div>
         </div>

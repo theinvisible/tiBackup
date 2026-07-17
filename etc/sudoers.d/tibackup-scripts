@@ -1,0 +1,13 @@
+# tiBackup pre/post-backup scripts run as the unprivileged "tibackup" user, not as
+# root. To let a script perform SPECIFIC root actions, add narrow rules here and
+# call them with `sudo` from inside the script. Keep commands absolute-path and as
+# specific as possible; avoid blanket "ALL". Validate after editing with:
+#
+#     visudo -cf /etc/sudoers.d/tibackup-scripts
+#
+# This file ships with only commented examples (no privileges are granted by
+# default). Uncomment/adapt what you actually need:
+#
+# tibackup ALL=(root) NOPASSWD: /usr/bin/systemctl restart my-app.service
+# tibackup ALL=(root) NOPASSWD: /usr/bin/rsync
+# tibackup ALL=(root) NOPASSWD: /usr/sbin/service my-app stop, /usr/sbin/service my-app start

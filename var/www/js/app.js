@@ -76,7 +76,7 @@ function app() {
     prefs: null,
 
     // script editor
-    scriptOpen: false, scriptPath: "", scriptContent: "", scriptField: "",
+    scriptOpen: false, scriptDir: "", scriptName: "", scriptContent: "", scriptField: "",
 
     // path picker (native-style file browser)
     pickerOpen: false, pickerMode: "src", pickerUuid: "", pickerSshUuid: "", pickerFiles: false,
@@ -503,20 +503,27 @@ function app() {
     },
 
     // ---- script editor ----------------------------------------------------
+    // Pick an EXISTING script from the (fixed) scripts directory. The picker is
+    // rooted at paths/scripts server-side, so the job can only reference a script
+    // inside that directory - never a free-text absolute path.
+    async chooseScript(field) {
+      const p = await this.openPicker("script", { files: true });
+      if (p) this.job[field] = p;
+    },
     async openScript(field) {
       this.scriptField = field;
-      this.scriptPath = this.job[field] || "";
       this.scriptContent = "";
-      if (this.scriptPath) {
-        try { const r = await api.get("/api/scripts?path=" + encodeURIComponent(this.scriptPath)); this.scriptContent = r.content; } catch (e) {}
+      // The scripts directory is fixed (root-only, set in main.conf); only the file
+      // name is editable, so a script can never be written outside that directory.
+      if (!this.prefs) { try { this.prefs = await api.get("/api/prefs"); } catch (e) {} }
+      this.scriptDir = (this.prefs && this.prefs.paths ? this.prefs.paths.scripts : "").replace(/\/$/, "");
+      const cur = this.job[field] || "";
+      if (cur) {
+        this.scriptName = cur.replace(/^.*\//, "");   // basename only
+        try { const r = await api.get("/api/scripts?path=" + encodeURIComponent(cur)); this.scriptContent = r.content; } catch (e) {}
       } else {
-        // suggest a timestamped name under the configured scripts directory
-        if (!this.prefs) { try { this.prefs = await api.get("/api/prefs"); } catch (e) {} }
-        const dir = this.prefs && this.prefs.paths ? this.prefs.paths.scripts : "";
-        if (dir) {
-          const suffix = field === "scriptAfterBackup" ? "afterbackup" : "beforebackup";
-          this.scriptPath = dir.replace(/\/$/, "") + "/" + this.tsStamp() + "_" + suffix + ".sh";
-        }
+        const suffix = field === "scriptAfterBackup" ? "afterbackup" : "beforebackup";
+        this.scriptName = this.tsStamp() + "_" + suffix + ".sh";
       }
       this.scriptOpen = true;
     },
@@ -524,20 +531,19 @@ function app() {
       const d = new Date(), p = (n) => String(n).padStart(2, "0");
       return "" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
     },
-    async pickScriptPath() {
-      const p = await this.openPicker("script", { files: true });
-      if (p) this.scriptPath = p;
-    },
     insertMntVar() { this.scriptContent += "%MNTBACKUPDIR%"; },
     copyMntVar() {
       if (navigator.clipboard) navigator.clipboard.writeText("%MNTBACKUPDIR%").then(() => this.toast("Copied to clipboard"));
       else this.toast("Clipboard unavailable", "error");
     },
     async saveScript() {
-      if (!this.scriptPath) { this.toast("Script path required", "error"); return; }
+      const name = (this.scriptName || "").trim();
+      if (!name || name.includes("/")) { this.toast("Enter a script file name (no '/')", "error"); return; }
+      if (!this.scriptDir) { this.toast("Scripts directory not configured", "error"); return; }
+      const path = this.scriptDir + "/" + name;
       try {
-        await api.put("/api/scripts", { path: this.scriptPath, content: this.scriptContent });
-        this.job[this.scriptField] = this.scriptPath;
+        await api.put("/api/scripts", { path: path, content: this.scriptContent });
+        this.job[this.scriptField] = path;
         this.scriptOpen = false; this.toast("Script saved");
       } catch (e) { this.toast("Save failed: " + e.message, "error"); }
     },
