@@ -477,6 +477,8 @@ void ApiRouter::registerReadRoutes()
 
         QJsonObject smtp;
         smtp["server"]   = cfg.getValue("smtp/server").toString();
+        smtp["port"]     = cfg.getValue("smtp/port").toInt();
+        smtp["security"] = cfg.getValue("smtp/security").toString();   // none|starttls|ssl
         smtp["auth"]     = cfg.getValue("smtp/auth").toBool();
         smtp["username"] = cfg.getValue("smtp/username").toString();
         smtp["from"]     = cfg.getValue("smtp/from").toString();
@@ -822,6 +824,8 @@ void ApiRouter::registerWriteRoutes()
         {
             const QJsonObject s = b["smtp"].toObject();
             if(s.contains("server"))   cfg.setValue("smtp/server", s["server"].toString());
+            if(s.contains("port"))     cfg.setValue("smtp/port", s["port"].toInt());
+            if(s.contains("security")) cfg.setValue("smtp/security", s["security"].toString());
             if(s.contains("auth"))     cfg.setValue("smtp/auth", s["auth"].toBool());
             if(s.contains("username")) cfg.setValue("smtp/username", s["username"].toString());
             if(s.contains("from"))     cfg.setValue("smtp/from", s["from"].toString());
@@ -858,6 +862,9 @@ void ApiRouter::registerWriteRoutes()
         const QJsonObject s = b.value("smtp").toObject();
         tiBackupMailer::Params p;
         p.server   = s.contains("server")   ? s["server"].toString()  : cfg.getValue("smtp/server").toString();
+        p.port     = s.contains("port")     ? s["port"].toInt()        : cfg.getValue("smtp/port").toInt();
+        p.security = tiBackupMailer::securityFromString(
+                        s.contains("security") ? s["security"].toString() : cfg.getValue("smtp/security").toString());
         p.auth     = s.contains("auth")     ? s["auth"].toBool()       : cfg.getValue("smtp/auth").toBool();
         p.username = s.contains("username") ? s["username"].toString() : cfg.getValue("smtp/username").toString();
         p.from     = s.contains("from")     ? s["from"].toString()     : cfg.getValue("smtp/from").toString();

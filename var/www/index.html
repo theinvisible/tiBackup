@@ -170,6 +170,16 @@
           <div class="card">
             <div class="card-head"><h2>E-mail (SMTP)</h2></div>
             <label>Server<input x-model="prefs.smtp.server"></label>
+            <div class="grid2">
+              <label>Port<input type="number" min="1" max="65535" x-model.number="prefs.smtp.port" placeholder="25"></label>
+              <label>Security
+                <select x-model="prefs.smtp.security">
+                  <option value="none">None (plain)</option>
+                  <option value="starttls">STARTTLS</option>
+                  <option value="ssl">SSL/TLS</option>
+                </select>
+              </label>
+            </div>
             <label>From (sender)<input x-model="prefs.smtp.from" placeholder="tiBackup Backupsystem &lt;tibackup@iteas.at&gt;"></label>
             <label class="check"><input type="checkbox" x-model="prefs.smtp.auth"> Server requires authentication</label>
             <div class="grid2" x-show="prefs.smtp.auth">
