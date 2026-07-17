@@ -89,12 +89,13 @@ else
   echo "  FAIL  script produced no output (did it run?)"; RC=1
 fi
 echo "--- newest backup detail log ---"
-d=/etc/tibackup/logs/backup_detail; f=$(ls -t "$d" 2>/dev/null | head -1)
+# Logs live under /var/log/tibackup since 0.9.0 (fresh install, no TIBACKUP_CONF).
+d=/var/log/tibackup/backup_detail; f=$(ls -t "$d" 2>/dev/null | head -1)
 [ -n "$f" ] && tail -25 "$d/$f" || echo "  (no detail log)"
 if [ $RC -ne 0 ]; then
   echo "--- daemon.log tail ---"; tail -15 /tmp/daemon.log
   echo "--- tibackup.log (runScriptAsUser diag) ---"
-  grep -iE "runScriptAsUser|script" /etc/tibackup/logs/tibackup.log 2>/dev/null | tail -15 || echo "(no internal log)"
+  grep -iE "runScriptAsUser|script" /var/log/tibackup/tibackup.log 2>/dev/null | tail -15 || echo "(no internal log)"
   echo "--- ls staged temp + /tmp perms ---"; ls -ld /tmp; ls -l /tmp/tibackup-* 2>/dev/null || echo "(temp already removed)"
 fi
 

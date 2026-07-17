@@ -15,6 +15,11 @@ override_dh_auto_install:
 	# Commented sudoers template for the unprivileged script-runner user (0440,
 	# root-owned as sudoers requires). Ships with no active rules.
 	install -D -m 0440 etc/sudoers.d/tibackup-scripts debian/tibackup/etc/sudoers.d/tibackup-scripts
+	# logrotate for the held-open tibackup.log (copytruncate) and tmpfiles age-
+	# cleanup for the write-once run/rsync logs (see the files for rationale).
+	# Logs live under /var/log/tibackup; the dir is created by the postinst.
+	install -D -m 0644 etc/logrotate.d/tibackup debian/tibackup/etc/logrotate.d/tibackup
+	install -D -m 0644 etc/tmpfiles.d/tibackup.conf debian/tibackup/usr/lib/tmpfiles.d/tibackup.conf
 
 # The tibackupd systemd unit ships as debian/tibackup.tibackupd.service. Because
 # the unit name (tibackupd) differs from the package name (tibackup), dh_installsystemd

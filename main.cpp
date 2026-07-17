@@ -30,6 +30,7 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 
 #include <ticonf.h>
 #include <diskmain.h>
+#include "config.h"
 #include "logging.h"
 #include "webserver/webserver.h"
 #include "webserver/auth/passwordhash.h"
@@ -119,6 +120,20 @@ int main(int argc, char *argv[])
 
     if(a.arguments().contains(QStringLiteral("--regenerate-web-cert")))
         return regenerateWebCert();
+
+    // Fatal config check happens HERE (main may legitimately exit non-zero), not
+    // inside tiConfMain's ctor - a library must not exit() the host process. If
+    // the main config could not be created/read, refuse to start rather than run
+    // the daemon against empty defaults.
+    {
+        tiConfMain cfg;
+        if(!cfg.isValid())
+        {
+            qCritical() << "tiBackup: main configuration unusable at" << tibackup_config::mainConfigFile()
+                        << "- refusing to start.";
+            return EXIT_FAILURE;
+        }
+    }
 
     // DiskMain owns the backupManager that the scheduler/hotplug paths use; the
     // web UI drives manual backups and live status from that SAME instance.

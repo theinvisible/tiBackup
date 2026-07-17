@@ -20,7 +20,9 @@
 
 #include "ticonf.h"
 #include "pbsclient.h"
+#include "tibackupscheduler.h"
 #include "obj/pbserver.h"
+#include "obj/tibackupjob.h"
 #include "webserver/auth/passwordhash.h"
 
 // ---------------------------------------------------------------------------
@@ -248,6 +250,82 @@ private slots:
     }
 };
 
+// ---------------------------------------------------------------------------
+// Scheduler decision (Prio-3 Fix A). Pure, wall-clock-free: strict-slot firing
+// with a persisted last-run, so no double-fire and no resurrecting missed slots.
+// ---------------------------------------------------------------------------
+class SchedulerTest : public QObject
+{
+    Q_OBJECT
+private:
+    static tiBackupJob job(tiBackupJobInterval type, const QString &time, int day = 0)
+    {
+        tiBackupJob j;
+        j.name = "sched";
+        j.intervalType = type;
+        j.intervalTime = time;
+        j.intervalDay = day;
+        return j;
+    }
+private slots:
+    void daily()
+    {
+        const tiBackupJob j = job(tiBackupJobInterval::DAILY, "03:00");
+        const QDateTime slot(QDate(2026, 7, 17), QTime(3, 0));
+
+        QVERIFY(tiBackupScheduler::shouldRun(j, slot, 0));                    // exactly at slot
+        QVERIFY(tiBackupScheduler::shouldRun(j, slot.addSecs(30), 0));        // within grace
+        QVERIFY(!tiBackupScheduler::shouldRun(j, slot.addSecs(-60), 0));      // before slot
+        QVERIFY(!tiBackupScheduler::shouldRun(j, slot.addSecs(300), 0));      // past grace -> missed, skip
+
+        // Already fired this slot (last-run at/after the slot) -> no re-fire.
+        QVERIFY(!tiBackupScheduler::shouldRun(j, slot.addSecs(30), slot.toSecsSinceEpoch()));
+        // Last run was for the PREVIOUS occurrence -> fire.
+        QVERIFY(tiBackupScheduler::shouldRun(j, slot, slot.toSecsSinceEpoch() - 1));
+    }
+
+    void graceBoundary()
+    {
+        const tiBackupJob j = job(tiBackupJobInterval::DAILY, "03:00");
+        const QDateTime slot(QDate(2026, 7, 17), QTime(3, 0));
+        QVERIFY(tiBackupScheduler::shouldRun(j, slot.addSecs(tiBackupScheduler::defaultGraceSecs), 0));       // inclusive
+        QVERIFY(!tiBackupScheduler::shouldRun(j, slot.addSecs(tiBackupScheduler::defaultGraceSecs + 1), 0));  // one past
+    }
+
+    void weekly()
+    {
+        const QDate d(2026, 7, 17);
+        const QDateTime slot(d, QTime(3, 0));
+        const int today = d.dayOfWeek() - 1;                 // 0=Mon..6=Sun (as stored)
+
+        tiBackupJob j = job(tiBackupJobInterval::WEEKLY, "03:00", today);
+        QVERIFY(tiBackupScheduler::shouldRun(j, slot, 0));   // matching weekday
+
+        j.intervalDay = (today + 1) % 7;                     // a different weekday -> no slot today
+        QVERIFY(!tiBackupScheduler::shouldRun(j, slot, 0));
+    }
+
+    void monthly()
+    {
+        const QDate d(2026, 7, 17);
+        const QDateTime slot(d, QTime(3, 0));
+
+        tiBackupJob j = job(tiBackupJobInterval::MONTHLY, "03:00", d.day());
+        QVERIFY(tiBackupScheduler::shouldRun(j, slot, 0));   // matching day-of-month
+
+        j.intervalDay = d.day() == 28 ? 27 : 28;             // a different day -> no slot today
+        QVERIFY(!tiBackupScheduler::shouldRun(j, slot, 0));
+    }
+
+    void neverRuns()
+    {
+        const QDateTime slot(QDate(2026, 7, 17), QTime(3, 0));
+        QVERIFY(!tiBackupScheduler::shouldRun(job(tiBackupJobInterval::NONE, "03:00"), slot, 0));   // NONE
+        QVERIFY(!tiBackupScheduler::shouldRun(job(tiBackupJobInterval::DAILY, "nonsense"), slot, 0)); // bad time
+        QVERIFY(!tiBackupScheduler::shouldRun(job(tiBackupJobInterval::DAILY, ""), slot, 0));         // empty time
+    }
+};
+
 int main(int argc, char *argv[])
 {
     // Redirect the whole config tree into a throwaway dir BEFORE any tiConfMain
@@ -262,6 +340,7 @@ int main(int argc, char *argv[])
     { FingerprintTest t;   status |= QTest::qExec(&t, argc, argv); }
     { PasswordHashTest t;  status |= QTest::qExec(&t, argc, argv); }
     { PbsBackupIdTest t;   status |= QTest::qExec(&t, argc, argv); }
+    { SchedulerTest t;     status |= QTest::qExec(&t, argc, argv); }
     return status;
 }
 

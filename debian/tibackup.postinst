@@ -13,6 +13,19 @@ case "$1" in
                     --shell /usr/sbin/nologin --gecos "tiBackup script runner" tibackup
         fi
 
+        # Logs now live under /var/log/tibackup (FHS-correct), not in the /etc
+        # config tree. Create the directory root-only (detail logs can contain
+        # script bodies), and on upgrade migrate any logs from the old
+        # /etc/tibackup/logs location. The daemon's config migration rewrites the
+        # paths/logs key to match when it next starts (via the DEBHELPER snippet
+        # below). Best-effort: a failure here must not abort the install.
+        mkdir -p /var/log/tibackup
+        chmod 0700 /var/log/tibackup
+        if [ -d /etc/tibackup/logs ]; then
+            cp -a /etc/tibackup/logs/. /var/log/tibackup/ 2>/dev/null || true
+            rm -rf /etc/tibackup/logs
+        fi
+
         # Generate a self-signed TLS certificate for the web UI (Proxmox-style).
         # Idempotent: keeps an existing cert, so this is safe on every upgrade too.
         # Runs BEFORE the debhelper-generated snippet (which starts the daemon) so the cert already

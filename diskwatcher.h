@@ -35,9 +35,9 @@ public:
     explicit DiskWatcher(QObject *parent = 0);
 
 signals:
-    void finished();
-    void error(QString err);
-
+    // The watcher runs for the whole process lifetime (process() blocks forever on
+    // the udev poll), so it has no finished()/error() completion signals - the only
+    // outputs are the hotplug add/remove notifications below.
     void diskRemoved(DeviceDisk disk);
     void diskAdded(DeviceDisk disk);
 

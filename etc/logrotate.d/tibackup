@@ -1,0 +1,22 @@
+# tiBackup main daemon log rotation.
+#
+# The daemon opens <paths/logs>/tibackup.log in append mode and holds the handle
+# OPEN for its whole lifetime (there is no SIGHUP reopen), so it MUST be rotated
+# with copytruncate - a plain rename would leave the daemon writing to the old,
+# now-unlinked inode and the new file would stay empty.
+#
+# The per-run (backup_detail) and per-job rsync logs are write-once and the web
+# UI lists them by their original names, so they are age-cleaned in place by
+# tmpfiles.d/tibackup.conf instead of being rotated here.
+#
+# The path below tracks the default paths/logs config key (/var/log/tibackup).
+# If you change paths/logs in main.conf, update this path to match.
+/var/log/tibackup/tibackup.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

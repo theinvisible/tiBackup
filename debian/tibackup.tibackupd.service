@@ -6,5 +6,30 @@ DefaultDependencies=no
 [Service]
 ExecStart=/usr/bin/tiBackup
 Restart=always
+Type=simple
+# Root-only file mode for anything the daemon creates (config holds secrets).
+UMask=0077
+TimeoutStopSec=30
+
+# --- Conservative sandboxing --------------------------------------------------
+# The daemon MUST stay root and needs: mount/umount, cryptsetup (LUKS), udev,
+# dropping to an unprivileged user (+ sudo) to run pre/post scripts, and rsync of
+# arbitrary paths. Only directives that do not break those are enabled here.
+ProtectSystem=true
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictRealtime=yes
+LockPersonality=yes
+#
+# Deliberately NOT set (each would break a required capability):
+#   NoNewPrivileges / RestrictSUIDSGID  -> break sudo inside pre/post scripts
+#   PrivateTmp / PrivateMounts          -> hide /mnt backup mounts from the host
+#   ProtectSystem=strict|full           -> block writes to /etc/tibackup and /mnt
+#   ProtectKernelModules                -> block dm-crypt module load for LUKS
+#   SystemCallFilter                    -> block mount(2)/mknod used by mount/loop
+#   ProtectHome                         -> block backing up /home
 [Install]
 WantedBy=multi-user.target

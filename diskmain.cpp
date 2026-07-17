@@ -29,11 +29,13 @@ Copyright (C) 2014 Rene Hadler, rene@hadler.me, https://hadler.me
 #include <QThread>
 #include <QDateTime>
 #include <QTimer>
+#include <QSettings>
 
 #include "config.h"
 #include "tibackupdiskobserver.h"
 #include "diskwatcher.h"
 #include "ticonf.h"
+#include "tibackupscheduler.h"
 #include "workers/tibackupjobworker.h"
 
 DiskMain::DiskMain(QObject *parent) : QObject(parent)
@@ -42,14 +44,14 @@ DiskMain::DiskMain(QObject *parent) : QObject(parent)
 
     manager = new backupManager(this);
 
+    // The disk watcher blocks forever polling udev (DiskWatcher::process ->
+    // tiBackupDiskObserver::start), so it intentionally lives for the whole process
+    // lifetime; there is no finished()/cleanup path (the previous finished()-driven
+    // quit/deleteLater connects were dead code and have been removed).
     QThread* thread = new QThread;
     DiskWatcher* worker = new DiskWatcher();
     worker->moveToThread(thread);
-    //connect(worker, SIGNAL(error(QString)), this, SLOT(errorString(QString)));
     connect(thread, SIGNAL(started()), worker, SLOT(process()));
-    connect(worker, SIGNAL(finished()), thread, SLOT(quit()));
-    connect(worker, SIGNAL(finished()), worker, SLOT(deleteLater()));
-    connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
     connect(worker, &DiskWatcher::diskRemoved, this, &DiskMain::onDiskRemoved);
     connect(worker, &DiskWatcher::diskAdded, this, &DiskMain::onDiskAdded);
     thread->start();
@@ -95,52 +97,37 @@ void DiskMain::onDiskAdded(DeviceDisk disk)
 
 void DiskMain::onTaskCheck()
 {
-    QDateTime curDate = QDateTime::currentDateTime();
+    const QDateTime now = QDateTime::currentDateTime();
 
-    qDebug() << "DiskMain::onTaskCheck()-> " << curDate.toString("MMM d hh:mm:ss");
+    qDebug() << "DiskMain::onTaskCheck()-> " << now.toString("MMM d hh:mm:ss");
 
-    // We check now all jobs if they have a task that meet the current condition
     tiConfBackupJobs objjobs;
     const QList<tiBackupJob> jobs = objjobs.getJobs();
+
+    // Per-job last-run timestamps live in a root-only sidecar next to main.conf,
+    // NOT in the job .conf (saveBackupJob rewrites that on every web edit, which
+    // would wipe the state). This gives strict-slot firing: each slot runs at most
+    // once (no double-fire on restart / fast completion), and a run missed because
+    // the daemon was down over its slot is skipped rather than resurrected. The
+    // firing decision is the pure tiBackupScheduler::shouldRun().
+    QSettings state(tibackup_config::schedulerStateFile(), QSettings::IniFormat);
+
     for(const tiBackupJob &job : jobs)
     {
         if(job.intervalType == tiBackupJobInterval::NONE)
             continue;
 
-        switch(job.intervalType)
+        const QString key = QString("%1/last_run").arg(job.name);
+        const qint64 lastRun = state.value(key).toLongLong();
+
+        if(tiBackupScheduler::shouldRun(job, now, lastRun))
         {
-        case tiBackupJobInterval::DAILY:
-        {
-            qDebug() << "daily::curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job.intervalTime;
-            if(curDate.toString("hh:mm") == job.intervalTime)
-            {
-                qInfo() << "Starting scheduled backup:" << job.name;
-                manager->startBackup(job.name);
-            }
-            break;
-        }
-        case tiBackupJobInterval::WEEKLY:
-        {
-            qDebug() << "weekly::curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job.intervalTime;
-            if(curDate.toString("hh:mm") == job.intervalTime && (curDate.date().dayOfWeek()-1) == job.intervalDay)
-            {
-                qInfo() << "Starting scheduled backup:" << job.name;
-                manager->startBackup(job.name);
-            }
-            break;
-        }
-        case tiBackupJobInterval::MONTHLY:
-        {
-            qDebug() << "monthly::curTime::" << curDate.toString("hh:mm") << "::jobTime::" << job.intervalTime;
-            if(curDate.toString("hh:mm") == job.intervalTime && curDate.date().day() == job.intervalDay)
-            {
-                qInfo() << "Starting scheduled backup:" << job.name;
-                manager->startBackup(job.name);
-            }
-            break;
-        }
-        case tiBackupJobInterval::NONE:
-            break;
+            qInfo() << "Starting scheduled backup:" << job.name;
+            // Record the run BEFORE launching so a second tick within the same
+            // grace window can't re-fire the job.
+            state.setValue(key, now.toSecsSinceEpoch());
+            state.sync();
+            manager->startBackup(job.name);
         }
     }
 }

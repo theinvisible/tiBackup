@@ -1,3 +1,27 @@
+tibackup (0.9.0) unstable; urgency=low
+
+  * Prio-3 hardening batch:
+    - Scheduler rewritten to strict-slot firing backed by a persisted per-job
+      last-run sidecar (/etc/tibackup/scheduler_state.conf): a slot fires at most
+      once (no more double-firing on restart or fast completion) and a slot
+      missed while the daemon was down is skipped, not resurrected.
+    - systemd unit: conservative sandboxing that does not break mount/LUKS/sudo/
+      /mnt visibility (ProtectSystem=true, ProtectKernelTunables/Logs,
+      ProtectControlGroups, ProtectClock/Hostname, RestrictRealtime,
+      LockPersonality, UMask=0077, TimeoutStopSec, Type).
+    - Logs moved from /etc/tibackup/logs to /var/log/tibackup (FHS). The postinst
+      migrates existing logs; paths/logs is rewritten on upgrade. logrotate
+      (copytruncate) rotates the held-open tibackup.log; a tmpfiles.d rule
+      age-cleans the write-once run/rsync logs.
+    - SMTP password is now write-only over the API (never returned to the
+      browser); the notification From address is configurable (smtp/from).
+    - Session cookie Max-Age is coupled to web/session_ttl.
+    - Content-Security-Policy is now sent as a real HTTP header so frame-ancestors
+      is enforced (it is ignored in a <meta> tag).
+    - Removed dead DiskWatcher finished()/error() signals and connects.
+
+ -- Rene Hadler <rene@hadler.me>  Fri, 17 Jul 2026 09:00:00 +0200
+
 tibackup (0.8.3) unstable; urgency=low
 
   * Fix postinst syntax error that aborted package configuration ("word

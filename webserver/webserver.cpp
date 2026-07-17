@@ -84,14 +84,21 @@ void sendBody(QHttpServerResponder &responder, const QByteArray &mimeType,
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     QHttpServerResponse resp(mimeType, body, status);
     // Defence-in-depth headers on every served asset/response: stop MIME sniffing,
-    // forbid framing (clickjacking) and leaking the URL via Referer. The strict
-    // Content-Security-Policy is delivered via a <meta> tag in index.html so it is
-    // applied uniformly across all Qt versions. HSTS only when actually on TLS.
+    // forbid framing (clickjacking) and leaking the URL via Referer. The
+    // Content-Security-Policy is sent as a REAL HTTP header here (not only the
+    // <meta> in index.html) - browsers ignore frame-ancestors in meta form, so the
+    // meta tag alone left clickjacking to X-Frame-Options only. HSTS only on TLS.
+    // Policy mirrors the <meta> in index.html; keep the two in sync.
+    static const QByteArray csp =
+        "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "
+        "base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     QHttpHeaders h = resp.headers();
     h.append("X-Content-Type-Options", "nosniff");
     h.append("X-Frame-Options", "DENY");
     h.append("Referrer-Policy", "no-referrer");
+    h.append("Content-Security-Policy", csp);
     if(secure)
         h.append("Strict-Transport-Security", "max-age=31536000");
     resp.setHeaders(std::move(h));
@@ -99,6 +106,7 @@ void sendBody(QHttpServerResponder &responder, const QByteArray &mimeType,
     resp.addHeader("X-Content-Type-Options", "nosniff");
     resp.addHeader("X-Frame-Options", "DENY");
     resp.addHeader("Referrer-Policy", "no-referrer");
+    resp.addHeader("Content-Security-Policy", csp);
     if(secure)
         resp.addHeader("Strict-Transport-Security", "max-age=31536000");
 #endif

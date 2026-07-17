@@ -35,9 +35,8 @@ void DiskWatcher::process()
     tiBackupDiskObserver *obs = new tiBackupDiskObserver();
     QObject::connect(obs, &tiBackupDiskObserver::diskRemoved, this, &DiskWatcher::onDiskRemoved);
     QObject::connect(obs, &tiBackupDiskObserver::diskAdded, this, &DiskWatcher::onDiskAdded);
+    // Blocks forever polling udev; never returns (hence no emit finished()).
     obs->start();
-
-    emit finished();
 }
 
 void DiskWatcher::onDiskRemoved(const DeviceDisk &disk)

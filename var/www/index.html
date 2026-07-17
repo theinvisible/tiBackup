@@ -6,8 +6,11 @@
   <!-- Content-Security-Policy: keep everything same-origin. 'unsafe-eval' is
        required by the (standard) Alpine build's expression evaluator; styles need
        'unsafe-inline' for the x-show/inline style attributes. No external origins
-       are allowed, which blocks injected third-party scripts and data exfil. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
+       are allowed, which blocks injected third-party scripts and data exfil.
+       frame-ancestors is NOT here on purpose - browsers ignore it in a <meta> (and
+       log a console error); it is enforced via the real HTTP header set in
+       webserver.cpp sendBody(). Keep this meta policy in sync with that header. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
   <title>tiBackup</title>
   <link rel="icon" href="img/tibackup.png">
@@ -167,10 +170,11 @@
           <div class="card">
             <div class="card-head"><h2>E-mail (SMTP)</h2></div>
             <label>Server<input x-model="prefs.smtp.server"></label>
+            <label>From (sender)<input x-model="prefs.smtp.from" placeholder="tiBackup Backupsystem &lt;tibackup@iteas.at&gt;"></label>
             <label class="check"><input type="checkbox" x-model="prefs.smtp.auth"> Server requires authentication</label>
             <div class="grid2" x-show="prefs.smtp.auth">
               <label>Username<input x-model="prefs.smtp.username"></label>
-              <label>Password<input type="password" x-model="prefs.smtp.password"></label>
+              <label>Password<input type="password" x-model="prefs.smtp.password" placeholder="(unchanged)" autocomplete="new-password"></label>
             </div>
           </div>
           <button class="btn btn-primary" style="width:auto" :disabled="busy">Save settings</button>

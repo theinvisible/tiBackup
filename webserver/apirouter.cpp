@@ -170,7 +170,23 @@ QByteArray buildSessionCookie(const QString &token, bool secure, bool clear = fa
     c += "; HttpOnly; SameSite=Strict; Path=/";
     if(secure)
         c += "; Secure";
-    c += clear ? "; Max-Age=0" : "; Max-Age=3600";
+    if(clear)
+    {
+        c += "; Max-Age=0";
+    }
+    else
+    {
+        // Couple the cookie's lifetime to the server-side session TTL
+        // (web/session_ttl, default 3600 - same fallback as WebServer) so the
+        // browser cookie and the server session expire consistently instead of
+        // the cookie always dying at a hardcoded 3600.
+        tiConfMain cfg;
+        bool ok = false;
+        int ttl = cfg.getValue("web/session_ttl").toInt(&ok);
+        if(!ok || ttl <= 0)
+            ttl = 3600;
+        c += "; Max-Age=" + QByteArray::number(ttl);
+    }
     return c;
 }
 
@@ -388,8 +404,10 @@ void ApiRouter::registerReadRoutes()
         smtp["server"]   = cfg.getValue("smtp/server").toString();
         smtp["auth"]     = cfg.getValue("smtp/auth").toBool();
         smtp["username"] = cfg.getValue("smtp/username").toString();
-        smtp["password"] = QString::fromUtf8(
-            QByteArray::fromBase64(cfg.getValue("smtp/password").toString().toLatin1()));
+        smtp["from"]     = cfg.getValue("smtp/from").toString();
+        // Write-only: never return the SMTP password to the client. Expose only
+        // whether one is set so the UI can show a "keep existing" placeholder.
+        smtp["password_set"] = !cfg.getValue("smtp/password").toString().isEmpty();
         o["smtp"] = smtp;
 
         return jsonResp(o);
@@ -679,9 +697,16 @@ void ApiRouter::registerWriteRoutes()
             if(s.contains("server"))   cfg.setValue("smtp/server", s["server"].toString());
             if(s.contains("auth"))     cfg.setValue("smtp/auth", s["auth"].toBool());
             if(s.contains("username")) cfg.setValue("smtp/username", s["username"].toString());
+            if(s.contains("from"))     cfg.setValue("smtp/from", s["from"].toString());
+            // Write-only: only overwrite the stored password when a non-empty value
+            // is supplied. An omitted/empty field means "keep the current password".
             if(s.contains("password"))
-                cfg.setValue("smtp/password",
-                    QString::fromLatin1(s["password"].toString().toUtf8().toBase64()));
+            {
+                const QString pw = s["password"].toString();
+                if(!pw.isEmpty())
+                    cfg.setValue("smtp/password",
+                        QString::fromLatin1(pw.toUtf8().toBase64()));
+            }
         }
         cfg.sync();
         return okResp();
