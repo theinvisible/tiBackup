@@ -63,7 +63,29 @@ namespace {
 using StatusCode = QHttpServerResponse::StatusCode;
 using Method     = QHttpServerRequest::Method;
 
-constexpr int kMaxLogTailBytes = 256 * 1024;
+constexpr int    kMaxLogTailBytes    = 256 * 1024;              // daemon log + live-tail delta
+constexpr qint64 kMaxLogPreviewBytes = 2 * 1024 * 1024;        // initial run/rsync log view (2 MB)
+constexpr qint64 kMaxLogFullBytes    = 64 * 1024 * 1024;       // "Load full log" safety ceiling (64 MB)
+
+// Read a run/rsync log for the web viewer. Returns the text plus the file size and
+// whether it was truncated. full=false gives a quick tail preview (kMaxLogPreviewBytes);
+// full=true returns the whole file up to kMaxLogFullBytes. When the cap trims the head,
+// the read is advanced to the next line boundary so it never starts mid-line.
+struct LogView { QString text; qint64 size = 0; bool truncated = false; };
+LogView readLogForView(QFile &f, bool full)
+{
+    LogView v;
+    v.size = f.size();
+    const qint64 cap = full ? kMaxLogFullBytes : kMaxLogPreviewBytes;
+    if(v.size > cap)
+    {
+        f.seek(v.size - cap);
+        f.readLine();          // drop the partial first line
+        v.truncated = true;
+    }
+    v.text = QString::fromUtf8(f.readAll());
+    return v;
+}
 
 // Stop content-type sniffing on API responses (defence-in-depth against a
 // browser treating a JSON body as something executable).
@@ -651,23 +673,23 @@ void ApiRouter::registerReadRoutes()
         const qint64 size = f.size();
         bool hasOffset = false;
         const qint64 offset = req.query().queryItemValue("offset").toLongLong(&hasOffset);
+        const bool wantFull = req.query().queryItemValue("full") == QLatin1String("1");
 
-        QByteArray content;
+        QJsonObject o;
         if(hasOffset && offset >= 0 && offset <= size)
         {
+            // Live-tail delta: only the bytes appended since the client's offset.
             f.seek(offset);
-            content = f.readAll();
+            o["text"]      = QString::fromUtf8(f.readAll());
+            o["truncated"] = false;
         }
         else
         {
-            if(size > kMaxLogTailBytes)
-                f.seek(size - kMaxLogTailBytes);
-            content = f.readAll();
+            const LogView v = readLogForView(f, wantFull);
+            o["text"]      = v.text;
+            o["truncated"] = v.truncated;
         }
         f.close();
-
-        QJsonObject o;
-        o["text"]   = QString::fromUtf8(content);
         o["offset"] = size;
         return jsonResp(o);
     });
@@ -715,17 +737,17 @@ void ApiRouter::registerReadRoutes()
             return errResp(QStringLiteral("invalid file"), StatusCode::BadRequest);
 
         tiConfMain cfg;
+        const bool wantFull = req.query().queryItemValue("full") == QLatin1String("1");
         const QString full = cfg.getValue("paths/logs").toString() + "/" + job + "/" + file + ".log";
         QFile f(full);
         if(!f.open(QIODevice::ReadOnly | QIODevice::Text))
             return errResp(QStringLiteral("log not found"), StatusCode::NotFound);
-        if(f.size() > kMaxLogTailBytes)
-            f.seek(f.size() - kMaxLogTailBytes);
-        const QByteArray content = f.readAll();
+        const LogView v = readLogForView(f, wantFull);
         f.close();
 
         QJsonObject o;
-        o["text"] = QString::fromUtf8(content);
+        o["text"]      = v.text;
+        o["truncated"] = v.truncated;
         return jsonResp(o);
     });
 

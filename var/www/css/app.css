@@ -251,6 +251,9 @@ input:focus, select:focus, textarea:focus {
 }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: var(--size-3) var(--size-4); border-bottom: 1px solid var(--border); }
 .modal-log { max-height: none; margin: var(--size-4); }
+.log-truncated { display: flex; align-items: center; justify-content: space-between; gap: var(--size-3);
+  margin: var(--size-3) var(--size-4) 0; padding: .5rem .75rem; border-radius: var(--radius-2);
+  background: var(--accent-soft); color: var(--text); font-size: .85rem; }
 .about { text-align: center; }
 .about-logo { width: 56px; height: 56px; margin-bottom: var(--size-2); }
 .about h1 { font-size: var(--font-size-4); margin-bottom: var(--size-3); }

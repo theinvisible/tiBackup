@@ -668,6 +668,11 @@
           <h2>Run log <span class="badge badge-running" x-show="runLive" style="margin-left:.5rem">live</span></h2>
           <button class="icon-btn" @click="closeRun()">✕</button>
         </div>
+        <div class="log-truncated" x-show="runTruncated">
+          <span>⚠ This log is large — showing the most recent part only.</span>
+          <button class="btn btn-ghost btn-sm" style="width:auto" :disabled="runFullLoading"
+                  @click="loadFullLog()" x-text="runFullLoading ? 'Loading…' : 'Load full log'"></button>
+        </div>
         <pre class="logbox modal-log" x-ref="runbox" x-text="runText"></pre>
       </div>
     </div>

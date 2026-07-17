@@ -57,6 +57,7 @@ function app() {
     // rsync per-job logs (grouped by job) + live run-log tail state
     rsyncRuns: [], openRsyncGroups: {},
     runLive: false, runFile: "", runName: "", runOffset: 0, runTimer: null, runTailBusy: false,
+    runTruncated: false, runKind: "", runJob: "", runFullLoading: false,
     pollTimer: null,
 
     // devices (loaded for the job editor)
@@ -549,10 +550,11 @@ function app() {
     // (poll for appended bytes) until it finishes or the modal is closed.
     async openRun(file, name, live) {
       this.stopRunTail();
-      this.runFile = file; this.runName = name || ""; this.runOffset = 0; this.runText = "";
+      this.runKind = "run"; this.runJob = "";
+      this.runFile = file; this.runName = name || ""; this.runOffset = 0; this.runText = ""; this.runTruncated = false;
       try {
         const r = await api.get("/api/logs/runs/" + encodeURIComponent(file));
-        this.runText = r.text; this.runOffset = r.offset || 0;
+        this.runText = r.text; this.runOffset = r.offset || 0; this.runTruncated = !!r.truncated;
       } catch (e) { console.error(e); }
       this.runOpen = true;
       if (live) {
@@ -582,12 +584,28 @@ function app() {
     // Static viewer for a raw rsync --log-file (reuses the run-log modal, no live tail).
     async openRsyncRun(job, file) {
       this.stopRunTail();
-      this.runLive = false; this.runName = ""; this.runFile = "";
+      this.runLive = false; this.runName = ""; this.runTruncated = false;
+      this.runKind = "rsync"; this.runJob = job; this.runFile = file;
       try {
         const r = await api.get("/api/logs/rsync/" + encodeURIComponent(job) + "/" + encodeURIComponent(file));
-        this.runText = r.text;
+        this.runText = r.text; this.runTruncated = !!r.truncated;
       } catch (e) { console.error(e); }
       this.runOpen = true;
+    },
+    // Re-fetch the currently-open log in full (used when the preview was truncated).
+    async loadFullLog() {
+      this.runFullLoading = true;
+      try {
+        const url = this.runKind === "rsync"
+          ? "/api/logs/rsync/" + encodeURIComponent(this.runJob) + "/" + encodeURIComponent(this.runFile) + "?full=1"
+          : "/api/logs/runs/" + encodeURIComponent(this.runFile) + "?full=1";
+        const r = await api.get(url);
+        this.runText = r.text;
+        this.runTruncated = !!r.truncated;   // stays true only if even the full cap was exceeded
+        if (this.runKind === "run" && typeof r.offset === "number") this.runOffset = r.offset;
+        this.scrollRun();
+      } catch (e) { this.toast("Load full log: " + e.message, "error"); }
+      finally { this.runFullLoading = false; }
     },
 
     // ---- script editor ----------------------------------------------------
