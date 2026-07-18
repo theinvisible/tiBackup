@@ -10,6 +10,10 @@ in a USB disk and a predefined backup job runs automatically, or schedule jobs
 daily/weekly/monthly — with rsync, optional LUKS encryption, pre/post scripts,
 e-mail notifications and Proxmox Backup Server integration.
 
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="tiBackup web UI — dashboard" width="900">
+</p>
+
 > **This repository** contains `tiBackup`, the background **daemon** (`tibackupd`).
 > It runs as **root**, listens for udev/hotplug and scheduled events, performs the
 > actual privileged work (mount, rsync, LUKS), and **serves a built-in web UI**
